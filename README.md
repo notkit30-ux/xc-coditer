@@ -15,7 +15,9 @@ Honest feature status. "Implemented" means the code exists; only items marked *u
 | Syntax highlighting (regex tokenizer, ~20 languages) | Implemented, unit-tested. Highlighting only: no parsing |
 | Find, replace all, go to line, command palette | Implemented (UI not yet run on a device) |
 | Mobile accessory key bar | Implemented (UI not yet run on a device) |
-| **Running / compiling any language** | **Not implemented yet** (Phase 3) |
+| **Instant Play (▶)**: HTML and JavaScript run in an offline WebView sandbox (JS on, network blocked, no file access); same-folder CSS/JS are inlined; console output shown | Logic unit-tested; WebView not yet run on a device |
+| **Suggestions while typing**: snippets, keywords and words from your file (rule-based, not a language server) | Logic unit-tested; UI not yet run on a device |
+| **Running / compiling other languages** (Python, Java, C, ...) | **Not implemented yet** (Phase 3) |
 | Terminal, extensions, Git, LSP, debugging, SQLite, web preview | Not implemented yet |
 
 Language support today: syntax highlighting only. Autocomplete, diagnostics, formatting, navigation, execution, compilation, debugging: none yet.

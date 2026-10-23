@@ -23,6 +23,8 @@ class EditorTab(val file: File, initial: String) {
     val lang: Lang = Lang.forFileName(file.name)
 }
 
+data class PlayPage(val title: String, val html: String)
+
 class EditorViewModel(app: Application) : AndroidViewModel(app) {
     val workspace = Workspace(java.io.File(app.filesDir, "workspace"))
     val tabs = mutableStateListOf<EditorTab>()
@@ -30,6 +32,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     val expanded = mutableStateListOf<String>()
     var treeVersion by mutableStateOf(0)
     var message by mutableStateOf<String?>(null)
+    var playPage by mutableStateOf<PlayPage?>(null)
     val tabSize = 4
 
     val active: EditorTab? get() = tabs.getOrNull(activeIndex)
@@ -207,6 +210,31 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         val v = tab.value
         val p = (v.selection.end + delta).coerceIn(0, v.text.length)
         tab.value = v.copy(selection = TextRange(p))
+    }
+
+    // ---- suggestions & instant play ----
+
+    fun applySuggestion(s: Suggestion) {
+        val tab = active ?: return
+        val v = tab.value
+        if (!v.selection.collapsed) return
+        val (text, pos) = Suggestions.apply(v.text, v.selection.start, s)
+        onEdit(tab, TextFieldValue(text, TextRange(pos)))
+    }
+
+    /** Reads a same-workspace file for HTML previews (prefers unsaved editor text). Small files only. */
+    private fun readSibling(from: File, rel: String): String? = runCatching {
+        val f = File(from.parentFile, rel).canonicalFile
+        if (!workspace.contains(f) || !f.isFile || f.length() > 1_000_000) return@runCatching null
+        tabs.firstOrNull { it.file.canonicalFile == f }?.value?.text ?: f.readText()
+    }.getOrNull()
+
+    fun play() {
+        val tab = active ?: return
+        when (val r = Play.build(tab.file.name, tab.lang, tab.value.text) { readSibling(tab.file, it) }) {
+            is PlayResult.Page -> playPage = PlayPage(tab.file.name, r.html)
+            is PlayResult.Unsupported -> message = r.reason
+        }
     }
 
     // ---- find / replace ----

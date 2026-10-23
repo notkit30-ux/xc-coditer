@@ -1,6 +1,9 @@
 package app.xccoditer
 
 import android.os.Bundle
+import android.webkit.WebResourceRequest
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
@@ -21,6 +24,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -38,6 +42,9 @@ import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import java.io.File
 import kotlinx.coroutines.launch
 
@@ -139,6 +146,9 @@ fun XcApp(vm: EditorViewModel) {
                         IconButton(onClick = { vm.save() }, enabled = vm.active != null) {
                             Icon(Icons.Default.Check, "Save", tint = TextCol)
                         }
+                        IconButton(onClick = { vm.play() }, enabled = vm.active != null) {
+                            Icon(Icons.Default.PlayArrow, "Play", tint = Accent)
+                        }
                         IconButton(onClick = { findOpen = !findOpen }, enabled = vm.active != null) {
                             Icon(Icons.Default.Search, "Find", tint = TextCol)
                         }
@@ -161,6 +171,7 @@ fun XcApp(vm: EditorViewModel) {
                     val tab = vm.active
                     if (tab == null) EmptyState() else CodeEditor(vm, tab)
                 }
+                if (vm.active != null) SuggestionBar(vm)
                 if (vm.active != null) AccessoryBar(vm)
             }
         }
@@ -168,6 +179,7 @@ fun XcApp(vm: EditorViewModel) {
 
     if (palette) {
         val cmds = listOf<Pair<String, () -> Unit>>(
+            "Play (run instantly)" to { vm.play() },
             "Save" to { vm.save() },
             "Save all" to { vm.saveAll() },
             "Undo" to { vm.undo() },
@@ -179,6 +191,7 @@ fun XcApp(vm: EditorViewModel) {
         )
         CommandPalette(cmds) { palette = false }
     }
+    vm.playPage?.let { PlayDialog(it) { vm.playPage = null } }
     if (goTo) {
         TextPrompt("Go to line", "", "Line number", { goTo = false }) { s ->
             s.trim().toIntOrNull()?.let { vm.goToLine(it) }
@@ -374,5 +387,67 @@ private fun Explorer(vm: EditorViewModel, closeDrawer: () -> Unit) {
             dismissButton = { TextButton(onClick = { dlg = null }) { Text("Cancel") } },
         )
         null -> {}
+    }
+}
+
+@Composable
+private fun SuggestionBar(vm: EditorViewModel) {
+    val tab = vm.active ?: return
+    val v = tab.value
+    val list = remember(v.text, v.selection, tab.lang) {
+        if (v.selection.collapsed) Suggestions.suggest(v.text, v.selection.start, tab.lang) else emptyList()
+    }
+    if (list.isEmpty()) return
+    Row(Modifier.fillMaxWidth().background(Bg).horizontalScroll(rememberScrollState())) {
+        list.forEach { s ->
+            val c = when (s.kind) {
+                SuggestionKind.SNIPPET -> Violet
+                SuggestionKind.KEYWORD -> Accent
+                SuggestionKind.WORD -> TextCol
+            }
+            Text(
+                s.label,
+                color = c,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 14.sp,
+                modifier = Modifier.clickable { vm.applySuggestion(s) }.padding(horizontal = 12.dp, vertical = 10.dp),
+            )
+        }
+    }
+}
+
+/** Offline, sandboxed preview: JS on, network blocked, no file/content access, no native bridge, no navigation. */
+@Composable
+private fun PlayDialog(page: PlayPage, onClose: () -> Unit) {
+    var reload by remember { mutableStateOf(0) }
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(Modifier.fillMaxSize(), color = Bg) {
+            Column(Modifier.statusBarsPadding()) {
+                Row(Modifier.fillMaxWidth().background(Panel).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("▶ " + page.title + "  (offline sandbox)", color = TextCol, fontSize = 13.sp, maxLines = 1, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { reload++ }) { Text("Reload") }
+                    TextButton(onClick = onClose) { Text("Close") }
+                }
+                key(reload) {
+                    AndroidView(
+                        modifier = Modifier.fillMaxSize(),
+                        factory = { ctx ->
+                            WebView(ctx).apply {
+                                settings.javaScriptEnabled = true
+                                settings.allowFileAccess = false
+                                settings.allowContentAccess = false
+                                settings.domStorageEnabled = false
+                                settings.blockNetworkLoads = true
+                                webViewClient = object : WebViewClient() {
+                                    override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean = true
+                                }
+                                loadDataWithBaseURL(null, page.html, "text/html", "utf-8", null)
+                            }
+                        },
+                        onRelease = { it.destroy() },
+                    )
+                }
+            }
+        }
     }
 }
