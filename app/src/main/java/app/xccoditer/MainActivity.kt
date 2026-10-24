@@ -120,14 +120,10 @@ fun XcApp(vm: EditorViewModel) {
         }
     }
 
-    ModalNavigationDrawer(
-        drawerState = drawer,
-        drawerContent = {
-            ModalDrawerSheet(drawerContainerColor = Panel) {
-                Explorer(vm, onTemplates = { showTemplates = true }, onExport = { exportSrc = it; exportLauncher.launch(null) }) { scope.launch { drawer.close() } }
-            }
-        },
-    ) {
+    val explorerContent: @Composable () -> Unit = {
+        Explorer(vm, onTemplates = { showTemplates = true }, onExport = { exportSrc = it; exportLauncher.launch(null) }) { scope.launch { drawer.close() } }
+    }
+    val mainContent: @Composable () -> Unit = {
         Scaffold(
             containerColor = Bg,
             snackbarHost = { SnackbarHost(snack) },
@@ -192,6 +188,14 @@ fun XcApp(vm: EditorViewModel) {
                 if (vm.active != null) SuggestionBar(vm)
                 if (vm.active != null) AccessoryBar(vm)
             }
+        }
+    }
+    // Phones: slide-out explorer. Tablets / landscape (>= 840dp wide): explorer stays open beside the editor.
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        if (maxWidth >= 840.dp) {
+            PermanentNavigationDrawer(drawerContent = { PermanentDrawerSheet(Modifier.width(300.dp), drawerContainerColor = Panel) { explorerContent() } }) { mainContent() }
+        } else {
+            ModalNavigationDrawer(drawerState = drawer, drawerContent = { ModalDrawerSheet(drawerContainerColor = Panel) { explorerContent() } }) { mainContent() }
         }
     }
 

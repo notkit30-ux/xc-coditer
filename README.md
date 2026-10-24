@@ -28,7 +28,8 @@ Honest feature status. "Implemented" means the code exists; only items marked *u
 | **Settings import/export** via clipboard | Codec unit-tested |
 | **Git** (clone over https, init + set remote, status, diff, history, branches, commit all, pull, push) using JGit; token stored encrypted (Android Keystore); network used only when you press clone/pull/push | Wrapper tested against real local repos in CI; not yet run against GitHub or on a device |
 | **Phone folders**: import a folder into the app, export a folder back (copy-based, no storage permission; limits: 3000 files, 5 MB per file, 100 MB total) | Not yet run on a device. Not live editing |
-| **Running / compiling other languages** (Python, Java, C, ...) | **Not implemented yet** (Phase 3) |
+| **Python** (embedded CPython 3.12 via Chaquopy, MIT): output streams into a terminal tab, Stop, confirmation before first run of a file | Builds in CI; not yet run on a device |
+| **Running / compiling other languages** (Java, C, ...) | **Not implemented yet** (Phase 3) |
 | Terminal, extensions, Git, LSP, debugging, SQLite, web preview | Not implemented yet |
 
 Language support today: syntax highlighting only. Autocomplete, diagnostics, formatting, navigation, execution, compilation, debugging: none yet.
@@ -46,9 +47,16 @@ If the run is red, open it, tap the failing step, and send the log; the first bu
 
 Never commit a keystore (`.gitignore` blocks `*.jks`/`*.keystore`). For a signed release, store the keystore and passwords as GitHub Actions secrets and add a signing config reading them from environment variables.
 
-## Phase 3 plan (runtimes) — to be verified, not yet built
+## Not built (and why)
 
-- **JavaScript/TypeScript:** a bundled engine (e.g. QuickJS via JNI) for JS; TypeScript transpile via a bundled compiler running in that engine. Not Node.js: no `fs`/`require` of Node modules.
-- **Python:** Chaquopy is the usual way to embed CPython on Android; its licensing and APK size (tens of MB per ABI) must be checked first. Native wheels (numpy etc.) are limited.
-- **SQLite:** Android's built-in `android.database.sqlite` gives a real engine at zero size cost.
-- **Java/Kotlin/C/C++/Go/Rust:** no realistic fully on-device compiler for most; plan is Termux integration or opt-in remote build, never silent uploads.
+- **Debugging, language servers (real code intelligence):** each needs a per-language backend that is not available on Android as a ready component. Suggestions today are rule-based (snippets, keywords, words in your file).
+- **Compiling Java, Kotlin, C, C++, Go, Rust on the phone:** Android ships no such toolchains and bundling them is impractical. Use a computer, or Termux (its packages are separate from this app). A remote-build option would need your explicit consent for every upload; it is not built.
+- **PHP, Lua, Ruby, TypeScript, C#, Dart execution:** no embedded runtime yet.
+- **Python limits:** 64-bit phones only; standard library only (no pip at runtime, no numpy/native packages); no keyboard input to programs; Stop acts at the next Python instruction.
+- **Extension marketplace online / VS Code compatibility:** no hosted registry; extensions are data-only snippets. VS Code extensions are not supported.
+- **Live editing of phone folders:** folders are copied in and out. Opening them in place needs a different storage layer.
+- **Release signing:** see "Releases". Debug APKs only today.
+
+## Privacy
+
+No ads, no analytics. The only permission is INTERNET, used when you start Git clone/pull/push. The HTML/JS preview blocks all network loads. Your Git token is stored encrypted with the Android Keystore and is only sent to the Git server you choose.
