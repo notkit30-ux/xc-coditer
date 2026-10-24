@@ -10,6 +10,7 @@ import org.eclipse.jgit.api.errors.EmptyCommitException
 import org.eclipse.jgit.api.errors.NoHeadException
 import org.eclipse.jgit.api.errors.TransportException
 import org.eclipse.jgit.diff.DiffFormatter
+import org.eclipse.jgit.lib.Constants
 import org.eclipse.jgit.lib.Repository
 import org.eclipse.jgit.revwalk.RevWalk
 import org.eclipse.jgit.transport.RemoteRefUpdate
@@ -39,6 +40,8 @@ object GitOps {
         val u = url.trim()
         require(u.startsWith("https://") || (allowFile && u.startsWith("file://"))) { "Only https:// repository URLs are supported" }
         Git.cloneRepository().setURI(u).setDirectory(dir).setCredentialsProvider(creds(auth)).call().use {
+            // Cloning an empty repository leaves JGit on "master"; GitHub's default is "main".
+            if (it.repository.resolve("HEAD") == null) it.repository.updateRef(Constants.HEAD).link("refs/heads/main")
             return "Cloned into ${dir.name} (branch ${it.repository.branch})"
         }
     }
