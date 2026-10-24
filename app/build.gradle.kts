@@ -15,8 +15,8 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
-        // Python (Chaquopy) ships per CPU type; each adds roughly 10+ MB to the APK.
-        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
+        // Python 3.12 (Chaquopy) exists only for 64-bit CPUs; each CPU type adds roughly 10+ MB to the APK.
+        ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
     }
 
     buildTypes {
