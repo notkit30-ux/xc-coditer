@@ -28,7 +28,7 @@ jobs:
       - name: Surface errors as annotations
         if: failure()
         run: |
-          grep -E '^(e: |FAILURE|\* What went wrong|.*Test.*FAILED|> )' build.log | head -40 | while IFS= read -r l; do echo "::error::${l:0:900}"; done
+          grep -E -A3 '^(e: |\* What went wrong|.*FAILED)' build.log | grep -v -E '^(> Task|--)' | head -40 | while IFS= read -r l; do echo "::error::${l:0:900}"; done
 
       - name: Build debug APK
         run: |
