@@ -2,6 +2,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("com.chaquo.python")
 }
 
 android {
@@ -14,6 +15,8 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
+        // Python (Chaquopy) ships per CPU type; each adds roughly 10+ MB to the APK.
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
     }
 
     buildTypes {
@@ -36,6 +39,10 @@ android {
             )
         }
     }
+}
+
+chaquopy {
+    defaultConfig { version = "3.12" }
 }
 
 dependencies {

@@ -228,6 +228,18 @@ fun XcApp(vm: EditorViewModel) {
     if (showRuntimes) RuntimeManagerDialog { showRuntimes = false }
     if (showExt) ExtensionsDialog(vm) { showExt = false }
     if (showGit) GitDialog(vm) { showGit = false }
+    LaunchedEffect(vm.terminalRequested) {
+        if (vm.terminalRequested) { showTerminal = true; vm.terminalRequested = false }
+    }
+    vm.pendingPython?.let { t ->
+        AlertDialog(
+            onDismissRequest = { vm.pendingPython = null },
+            title = { Text("Run ${t.file.name}?") },
+            text = { Text("Python code runs inside this app with the app's permissions: it can read and change files in your workspace and use the network if the code asks. Only run code you trust.") },
+            confirmButton = { TextButton(onClick = { vm.confirmPython(t) }) { Text("Run") } },
+            dismissButton = { TextButton(onClick = { vm.pendingPython = null }) { Text("Cancel") } },
+        )
+    }
     if (goTo) {
         TextPrompt("Go to line", "", "Line number", { goTo = false }) { s ->
             s.trim().toIntOrNull()?.let { vm.goToLine(it) }

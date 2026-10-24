@@ -19,9 +19,11 @@ class TerminalTab(val title: String, start: File) {
     var historyPos = -1
     @Volatile var process: Process? = null
     @Volatile var stopped = false
+    @Volatile var stopHook: (() -> Unit)? = null
 
     fun stop() {
         stopped = true
+        stopHook?.invoke()
         process?.destroyForcibly()
     }
 }

@@ -50,6 +50,12 @@ object RuntimeCheck {
             RuntimeInfo("HTML / CSS / JavaScript", RuntimeStatus.LIMITED, "System WebView ${webVersion ?: "?"}", true, "0 MB (system WebView)", "Test passed: ran JavaScript here. Limited: browser JS, not Node.js; network blocked in Play.")
         else RuntimeInfo("HTML / CSS / JavaScript", RuntimeStatus.UNSUPPORTED, webVersion ?: "-", false, "-", "The WebView JavaScript self-test failed or timed out.")
 
+        val pyVersion = withContext(Dispatchers.IO) { PythonRunner.selfTest(ctx) }
+        out += if (pyVersion != null)
+            RuntimeInfo("Python", RuntimeStatus.LIMITED, "CPython $pyVersion", true, "~10-15 MB per CPU type (inside the APK)",
+                "Test passed: ran code on this device. Limited: standard library only, no pip or native packages (numpy etc.), no keyboard input, Stop acts at the next instruction.")
+        else RuntimeInfo("Python", RuntimeStatus.UNSUPPORTED, "-", false, "-", "The Python self-test failed. This build may not include your device's CPU type.")
+
         val md = Markdown.toHtml("# a").contains("<h1>a</h1>")
         out += RuntimeInfo("Markdown", if (md) RuntimeStatus.VERIFIED else RuntimeStatus.UNSUPPORTED, "built-in", true, "0 MB", "Test passed: converted a sample heading.")
 

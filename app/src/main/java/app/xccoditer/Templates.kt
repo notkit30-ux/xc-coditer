@@ -19,7 +19,7 @@ object Templates {
         Template("python", "Python script", mapOf(
             "main.py" to "def main():\n    name = \"world\"\n    print(f\"Hello, {name}!\")\n\n\nif __name__ == \"__main__\":\n    main()\n",
             "README.md" to "# Python script\n\nRun with `python main.py` in a Python environment (for example Termux).\n",
-        ), "Editing works. Running Python inside XC CODITER is not built yet."),
+        ), "Open main.py and press Play. Runs on an embedded Python (standard library only; no pip or numpy)."),
         Template("java", "Java program", mapOf(
             "Main.java" to "public class Main {\n    public static void main(String[] args) {\n        System.out.println(\"Hello, Java\");\n    }\n}\n",
         ), "Editing works. Compile with `javac Main.java && java Main` on a computer or Termux. No on-device Java yet."),

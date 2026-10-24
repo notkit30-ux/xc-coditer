@@ -500,8 +500,53 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         tabs.firstOrNull { it.file.canonicalFile == f }?.value?.text ?: f.readText()
     }.getOrNull()
 
+    // ---- Python ----
+    var terminalRequested by mutableStateOf(false)
+    var pendingPython by mutableStateOf<EditorTab?>(null)
+    private val trustedPython = HashSet<File>()
+
+    fun confirmPython(tab: EditorTab) { trustedPython.add(tab.file); pendingPython = null; runPython(tab) }
+
+    private fun runPython(tab: EditorTab) {
+        val text = tab.value.text
+        val term = terminals.firstOrNull { it.title == "Python" } ?: TerminalTab("Python", workspace.root).also { terminals.add(it) }
+        if (term.running) { message = "Python is already running. Stop it first."; return }
+        activeTerminal = terminals.indexOf(term)
+        terminalRequested = true
+        term.lines.add("$ python ${tab.file.name}")
+        term.running = true
+        term.stopped = false
+        val ctx = getApplication<Application>()
+        term.stopHook = { PythonRunner.stop(ctx) }
+        viewModelScope.launch {
+            val t0 = System.currentTimeMillis()
+            var lines = 0
+            val code = withContext(Dispatchers.IO) {
+                try {
+                    workspace.write(tab.file, text)
+                    withContext(Dispatchers.Main) { tab.saved = text }
+                    PythonRunner.run(ctx, tab.file, emptyList()) { l ->
+                        lines++
+                        if (lines <= 5000) viewModelScope.launch(Dispatchers.Main) { term.lines.add(l.take(2000)) }
+                        else if (lines == 5001) viewModelScope.launch(Dispatchers.Main) { term.lines.add("[output truncated at 5000 lines]") }
+                    }
+                } catch (e: Throwable) {
+                    withContext(Dispatchers.Main) { term.lines.add("Python could not start: ${e.message ?: e.javaClass.simpleName}") }
+                    -1
+                }
+            }
+            term.stopHook = null
+            term.lines.add((if (term.stopped) "[stopped] " else "") + "[exit $code, ${System.currentTimeMillis() - t0} ms]")
+            term.running = false
+        }
+    }
+
     fun play() {
         val tab = active ?: return
+        if (tab.file.extension.equals("py", ignoreCase = true)) {
+            if (tab.file in trustedPython) runPython(tab) else pendingPython = tab
+            return
+        }
         if (tab.file.extension.equals("sql", ignoreCase = true)) {
             val script = tab.value.text
             viewModelScope.launch {

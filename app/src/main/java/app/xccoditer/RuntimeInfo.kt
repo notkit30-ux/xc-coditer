@@ -17,7 +17,6 @@ data class RuntimeInfo(val name: String, val status: RuntimeStatus, val version:
 object RuntimeCatalog {
     /** Entries that need no live check. None may claim VERIFIED: only a passed execution test can. */
     fun notInstalled(): List<RuntimeInfo> = listOf(
-        RuntimeInfo("Python", RuntimeStatus.NOT_BUILT, "-", false, "~20-40 MB (planned)", "Planned via an embedded interpreter. Native packages such as numpy will be limited."),
         RuntimeInfo("TypeScript", RuntimeStatus.NOT_BUILT, "-", false, "-", "Needs a bundled transpiler. Editing and highlighting work."),
         RuntimeInfo("PHP / Lua / Ruby", RuntimeStatus.NOT_BUILT, "-", false, "-", "No Android-ready interpreter is bundled yet."),
         RuntimeInfo("Java / Kotlin", RuntimeStatus.NEEDS_CONFIG, "-", false, "-", "No on-device JDK or Kotlin compiler. Use a computer, or Termux with its own packages."),
