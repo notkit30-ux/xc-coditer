@@ -2,6 +2,7 @@ package app.xccoditer
 
 import android.app.Application
 import android.content.Context
+import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -83,6 +84,139 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setExtensionEnabled(id: String, enabled: Boolean) { extensionStore.setEnabled(id, enabled); reloadExtensions() }
     fun uninstallExtension(id: String) { extensionStore.uninstall(id); reloadExtensions() }
+
+    // ---- phone folders (copy-based) ----
+    private fun under(f: File, dir: File) = f == dir || f.path.startsWith(dir.path + File.separator)
+
+    fun importFolder(uri: Uri) {
+        viewModelScope.launch {
+            message = "Importing…"
+            runCatching { withContext(Dispatchers.IO) { FolderCopy.importTree(getApplication(), uri, workspace, workspace.root) } }
+                .onSuccess { (dir, st) ->
+                    expanded.add(dir.path)
+                    refreshTree()
+                    message = "Imported ${st.files} file(s) into ${dir.name}" + if (st.skipped > 0) "; skipped ${st.skipped} (too large, over limits, or unreadable)" else ""
+                }
+                .onFailure(::fail)
+        }
+    }
+
+    fun exportFolder(src: File, uri: Uri) {
+        val pending = tabs.filter { it.dirty && under(it.file, src) }.map { it to it.value.text }
+        viewModelScope.launch {
+            message = "Exporting…"
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    pending.forEach { (t, text) -> workspace.write(t.file, text) }
+                    FolderCopy.exportTree(getApplication(), src, uri)
+                }
+            }.onSuccess { (name, st) ->
+                pending.forEach { (t, text) -> t.saved = text }
+                message = "Exported ${st.files} file(s) to \"$name\"" + if (st.skipped > 0) "; skipped ${st.skipped}" else ""
+            }.onFailure(::fail)
+        }
+    }
+
+    // ---- git ----
+    private val secrets by lazy { SecretStore(app) }
+    var gitName by mutableStateOf(prefs.getString("git_name", "") ?: "")
+        private set
+    var gitEmail by mutableStateOf(prefs.getString("git_email", "") ?: "")
+        private set
+    var gitUser by mutableStateOf(prefs.getString("git_user", "") ?: "")
+        private set
+    var tokenSaved by mutableStateOf(false)
+        private set
+    var secretsAvailable by mutableStateOf(true)
+        private set
+    var gitRepo by mutableStateOf<File?>(null)
+    var gitText by mutableStateOf("")
+        private set
+    var gitBusy by mutableStateOf(false)
+        private set
+
+    fun loadGitState() {
+        viewModelScope.launch {
+            val (saved, avail) = withContext(Dispatchers.IO) { !secrets.get("git_token").isNullOrBlank() to secrets.available }
+            tokenSaved = saved
+            secretsAvailable = avail
+        }
+    }
+
+    /** An empty [token] keeps the saved one. */
+    fun saveGitSettings(name: String, email: String, user: String, token: String) {
+        gitName = name.trim(); gitEmail = email.trim(); gitUser = user.trim()
+        prefs.edit().putString("git_name", gitName).putString("git_email", gitEmail).putString("git_user", gitUser).apply()
+        viewModelScope.launch {
+            if (token.isNotBlank()) {
+                val ok = withContext(Dispatchers.IO) { secrets.put("git_token", token.trim()) }
+                tokenSaved = ok
+                message = if (ok) "Git settings saved (token stored encrypted)" else "Saved name and email, but the token could not be stored securely on this device"
+            } else message = "Git settings saved"
+        }
+    }
+
+    fun forgetGitToken() { secrets.remove("git_token"); tokenSaved = false; message = "Token removed" }
+
+    fun gitCandidates(): List<File> {
+        @Suppress("UNUSED_VARIABLE") val v = treeVersion
+        return listOf(workspace.root) + workspace.list(workspace.root).filter { it.isDirectory }
+    }
+
+    private fun gitAuth(): GitAuth? = secrets.get("git_token")?.takeIf { it.isNotBlank() }?.let { GitAuth(gitUser, it) }
+
+    private fun closeTabsUnder(dir: File) {
+        tabs.removeAll { under(it.file, dir) }
+        activeIndex = activeIndex.coerceAtMost(tabs.lastIndex).coerceAtLeast(0)
+    }
+
+    private fun gitRun(closesEditors: Boolean = false, block: (File, GitAuth?) -> String) {
+        val repo = gitRepo ?: run { gitText = "Choose a repository first"; return }
+        if (gitBusy) return
+        if (closesEditors && hasUnsavedUnder(repo)) { gitText = "Save or close edited files in this repository first."; return }
+        viewModelScope.launch {
+            gitBusy = true
+            gitText = "Working…"
+            gitText = try { withContext(Dispatchers.IO) { block(repo, gitAuth()) } } catch (e: Exception) { GitOps.friendly(e) }
+            if (closesEditors) closeTabsUnder(repo)
+            refreshTree()
+            gitBusy = false
+        }
+    }
+
+    fun gitStatus() = gitRun { d, _ -> GitOps.status(d) }
+    fun gitDiff() = gitRun { d, _ -> GitOps.diff(d) }
+    fun gitLog() = gitRun { d, _ -> GitOps.log(d) }
+    fun gitBranches() = gitRun { d, _ -> GitOps.branches(d) }
+    fun gitCommit(msg: String) { saveAll(); gitRun { d, _ -> GitOps.commitAll(d, msg, GitIdentity(gitName, gitEmail)) } }
+    fun gitPush() = gitRun { d, a -> GitOps.push(d, a) }
+    fun gitPull() = gitRun(true) { d, a -> GitOps.pull(d, a) }
+    fun gitCheckout(n: String) = gitRun(true) { d, _ -> GitOps.checkout(d, n) }
+    fun gitNewBranch(n: String) = gitRun(true) { d, _ -> GitOps.createBranch(d, n) }
+    fun gitInit(remote: String) = gitRun { d, _ ->
+        GitOps.init(d)
+        "Initialized empty repository in ${d.name}" + if (remote.isNotBlank()) "\n" + GitOps.setRemote(d, remote) else ""
+    }
+
+    fun gitClone(url: String) {
+        if (gitBusy) return
+        val base = url.trim().trimEnd('/').substringAfterLast('/').removeSuffix(".git").filter { it.isLetterOrDigit() || it in "._-" }.ifBlank { "repo" }
+        viewModelScope.launch {
+            gitBusy = true
+            gitText = "Cloning… (this can take a while)"
+            val dest = workspace.child(workspace.root, workspace.uniqueChildName(workspace.root, base))
+            try {
+                val msg = withContext(Dispatchers.IO) { GitOps.clone(url, dest, gitAuth()) }
+                gitRepo = dest
+                gitText = msg
+            } catch (e: Exception) {
+                gitText = GitOps.friendly(e)
+                if (dest.exists() && !GitOps.isRepo(dest)) dest.deleteRecursively()
+            }
+            refreshTree()
+            gitBusy = false
+        }
+    }
 
     // ---- terminal ----
     val terminals = mutableStateListOf<TerminalTab>()

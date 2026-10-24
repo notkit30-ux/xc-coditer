@@ -26,6 +26,8 @@ Honest feature status. "Implemented" means the code exists; only items marked *u
 | **Runtime Manager**: each runtime shows verified only after a live self-test on your device | Not yet run on a device |
 | **Extensions**: data-only (snippets), manifest + lifecycle in `docs/EXTENSIONS.md`, bundled examples. No online registry. VS Code extensions are not supported | Manifest/lifecycle unit-tested; UI not yet run on a device |
 | **Settings import/export** via clipboard | Codec unit-tested |
+| **Git** (clone over https, init + set remote, status, diff, history, branches, commit all, pull, push) using JGit; token stored encrypted (Android Keystore); network used only when you press clone/pull/push | Wrapper tested against real local repos in CI; not yet run against GitHub or on a device |
+| **Phone folders**: import a folder into the app, export a folder back (copy-based, no storage permission; limits: 3000 files, 5 MB per file, 100 MB total) | Not yet run on a device. Not live editing |
 | **Running / compiling other languages** (Python, Java, C, ...) | **Not implemented yet** (Phase 3) |
 | Terminal, extensions, Git, LSP, debugging, SQLite, web preview | Not implemented yet |
 

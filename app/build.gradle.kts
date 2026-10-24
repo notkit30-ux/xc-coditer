@@ -28,6 +28,14 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
+    packaging {
+        resources {
+            excludes += setOf(
+                "META-INF/DEPENDENCIES", "META-INF/LICENSE*", "META-INF/NOTICE*", "META-INF/INDEX.LIST",
+                "META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA", "META-INF/AL2.0", "META-INF/LGPL2.1",
+            )
+        }
+    }
 }
 
 dependencies {
@@ -38,6 +46,12 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
+
+    // Git (JGit 5.13.x is the Java 8 / Android-compatible line). Network is used only when you run clone/push/pull.
+    implementation("org.eclipse.jgit:org.eclipse.jgit:5.13.3.202401111512-r")
+    implementation("org.slf4j:slf4j-nop:1.7.36")
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    implementation("androidx.documentfile:documentfile:1.0.1")
 
     testImplementation("junit:junit:4.13.2")
 }

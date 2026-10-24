@@ -5,7 +5,9 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -17,6 +19,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
@@ -46,6 +49,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -100,6 +104,14 @@ fun XcApp(vm: EditorViewModel) {
     var showTerminal by remember { mutableStateOf(false) }
     var showRuntimes by remember { mutableStateOf(false) }
     var showExt by remember { mutableStateOf(false) }
+    var showGit by remember { mutableStateOf(false) }
+    var exportSrc by remember { mutableStateOf<java.io.File?>(null) }
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri -> if (uri != null) vm.importFolder(uri) }
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        val s = exportSrc
+        if (uri != null && s != null) vm.exportFolder(s, uri)
+        exportSrc = null
+    }
 
     LaunchedEffect(vm.message) {
         vm.message?.let {
@@ -112,7 +124,7 @@ fun XcApp(vm: EditorViewModel) {
         drawerState = drawer,
         drawerContent = {
             ModalDrawerSheet(drawerContainerColor = Panel) {
-                Explorer(vm, onTemplates = { showTemplates = true }) { scope.launch { drawer.close() } }
+                Explorer(vm, onTemplates = { showTemplates = true }, onExport = { exportSrc = it; exportLauncher.launch(null) }) { scope.launch { drawer.close() } }
             }
         },
     ) {
@@ -157,6 +169,9 @@ fun XcApp(vm: EditorViewModel) {
                                 DropdownMenuItem(text = { Text("Search in files") }, onClick = { menu = false; showSearch = true })
                                 DropdownMenuItem(text = { Text("Quick open file") }, onClick = { menu = false; showQuick = true })
                                 DropdownMenuItem(text = { Text("New from template") }, onClick = { menu = false; showTemplates = true })
+                                DropdownMenuItem(text = { Text("Git") }, onClick = { menu = false; showGit = true })
+                                DropdownMenuItem(text = { Text("Import folder from phone") }, onClick = { menu = false; importLauncher.launch(null) })
+                                DropdownMenuItem(text = { Text("Export workspace to phone folder") }, onClick = { menu = false; exportSrc = vm.workspace.root; exportLauncher.launch(null) })
                                 DropdownMenuItem(text = { Text("Terminal") }, onClick = { menu = false; showTerminal = true })
                                 DropdownMenuItem(text = { Text("Runtime Manager") }, onClick = { menu = false; showRuntimes = true })
                                 DropdownMenuItem(text = { Text("Extensions") }, onClick = { menu = false; showExt = true })
@@ -195,6 +210,8 @@ fun XcApp(vm: EditorViewModel) {
             "New from template" to { showTemplates = true },
             "Settings" to { showSettings = true },
             "Terminal" to { showTerminal = true },
+            "Git" to { showGit = true },
+            "Import folder from phone" to { importLauncher.launch(null) },
             "Runtime Manager" to { showRuntimes = true },
             "Extensions" to { showExt = true },
             "Toggle light/dark theme" to { vm.updateLight(!vm.lightTheme) },
@@ -210,6 +227,7 @@ fun XcApp(vm: EditorViewModel) {
     if (showTerminal) TerminalDialog(vm) { showTerminal = false }
     if (showRuntimes) RuntimeManagerDialog { showRuntimes = false }
     if (showExt) ExtensionsDialog(vm) { showExt = false }
+    if (showGit) GitDialog(vm) { showGit = false }
     if (goTo) {
         TextPrompt("Go to line", "", "Line number", { goTo = false }) { s ->
             s.trim().toIntOrNull()?.let { vm.goToLine(it) }
@@ -354,7 +372,7 @@ private sealed interface Dlg {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun Explorer(vm: EditorViewModel, onTemplates: () -> Unit, closeDrawer: () -> Unit) {
+private fun Explorer(vm: EditorViewModel, onTemplates: () -> Unit, onExport: (File) -> Unit, closeDrawer: () -> Unit) {
     var dlg by remember { mutableStateOf<Dlg?>(null) }
     var menuFor by remember { mutableStateOf<File?>(null) }
     val rows = vm.visibleTree()
@@ -389,6 +407,9 @@ private fun Explorer(vm: EditorViewModel, onTemplates: () -> Unit, closeDrawer: 
                         if (f.isDirectory) {
                             DropdownMenuItem(text = { Text("New file here") }, onClick = { menuFor = null; dlg = Dlg.NewFile(f) })
                             DropdownMenuItem(text = { Text("New folder here") }, onClick = { menuFor = null; dlg = Dlg.NewFolder(f) })
+                        }
+                        if (f.isDirectory) {
+                            DropdownMenuItem(text = { Text("Export to phone folder") }, onClick = { menuFor = null; onExport(f) })
                         }
                         DropdownMenuItem(text = { Text("Rename") }, onClick = { menuFor = null; dlg = Dlg.Rename(f) })
                         DropdownMenuItem(text = { Text("Delete") }, onClick = { menuFor = null; dlg = Dlg.Delete(f) })
@@ -737,4 +758,95 @@ private fun ExtensionsDialog(vm: EditorViewModel, onClose: () -> Unit) {
             }
         },
     )
+}
+
+@Composable
+private fun GitDialog(vm: EditorViewModel, onClose: () -> Unit) {
+    LaunchedEffect(Unit) { vm.loadGitState() }
+    var url by remember { mutableStateOf("") }
+    var msg by remember { mutableStateOf("") }
+    var branch by remember { mutableStateOf("") }
+    var remote by remember { mutableStateOf("") }
+    var showSettings by remember { mutableStateOf(false) }
+    var name by remember { mutableStateOf(vm.gitName) }
+    var email by remember { mutableStateOf(vm.gitEmail) }
+    var user by remember { mutableStateOf(vm.gitUser) }
+    var token by remember { mutableStateOf("") }
+    val repo = vm.gitRepo
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(Modifier.fillMaxSize(), color = Bg) {
+            Column(Modifier.statusBarsPadding().imePadding().verticalScroll(rememberScrollState()).padding(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Git", color = Accent, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { showSettings = !showSettings }) { Text("Identity & token") }
+                    TextButton(onClick = onClose) { Text("Close") }
+                }
+                if (vm.gitBusy) LinearProgressIndicator(Modifier.fillMaxWidth())
+                if (showSettings) {
+                    OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Your name (for commits)") })
+                    OutlinedTextField(email, { email = it }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Your email (for commits)") })
+                    OutlinedTextField(user, { user = it }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("GitHub username") })
+                    OutlinedTextField(
+                        token, { token = it }, Modifier.fillMaxWidth(), singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        label = { Text(if (vm.tokenSaved) "Access token (saved; leave empty to keep)" else "Personal access token") },
+                    )
+                    Row {
+                        TextButton(onClick = { vm.saveGitSettings(name, email, user, token); token = "" }) { Text("Save") }
+                        if (vm.tokenSaved) TextButton(onClick = { vm.forgetGitToken() }) { Text("Remove token") }
+                    }
+                    Text(
+                        (if (vm.secretsAvailable) "The token is stored encrypted with the Android Keystore and is only sent to the server you push to or pull from. "
+                        else "Secure storage is unavailable on this device, so the token will NOT be saved. ") +
+                            "Use a GitHub fine-grained token limited to the repos you need (Contents: read and write).",
+                        color = Dim, fontSize = 11.sp,
+                    )
+                }
+                Text("REPOSITORY FOLDER", Modifier.padding(top = 8.dp), color = Dim, fontSize = 12.sp)
+                Row(Modifier.horizontalScroll(rememberScrollState())) {
+                    vm.gitCandidates().forEach { d ->
+                        val isRepo = GitOps.isRepo(d)
+                        TextButton(onClick = { vm.gitRepo = d }) {
+                            Text((if (d == vm.workspace.root) "(workspace)" else d.name) + if (isRepo) " ✓" else "", color = if (d == repo) Accent else TextCol)
+                        }
+                    }
+                }
+                if (repo != null && !GitOps.isRepo(repo)) {
+                    OutlinedTextField(remote, { remote = it }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Remote URL (optional, https://…)") })
+                    Button(onClick = { vm.gitInit(remote) }, enabled = !vm.gitBusy) { Text("Start a Git repository in ${repo.name}") }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+                    OutlinedTextField(url, { url = it }, Modifier.weight(1f), singleLine = true, label = { Text("Clone: https://github.com/user/repo") })
+                    TextButton(onClick = { vm.gitClone(url) }, enabled = url.isNotBlank() && !vm.gitBusy) { Text("Clone") }
+                }
+                if (repo != null && GitOps.isRepo(repo)) {
+                    Row(Modifier.horizontalScroll(rememberScrollState()).padding(top = 8.dp)) {
+                        TextButton(onClick = { vm.gitStatus() }) { Text("Status") }
+                        TextButton(onClick = { vm.gitDiff() }) { Text("Diff") }
+                        TextButton(onClick = { vm.gitLog() }) { Text("History") }
+                        TextButton(onClick = { vm.gitBranches() }) { Text("Branches") }
+                        TextButton(onClick = { vm.gitPull() }) { Text("Pull") }
+                        TextButton(onClick = { vm.gitPush() }) { Text("Push") }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(msg, { msg = it }, Modifier.weight(1f), singleLine = true, label = { Text("Commit message") })
+                        TextButton(onClick = { vm.gitCommit(msg); msg = "" }, enabled = msg.isNotBlank() && !vm.gitBusy) { Text("Commit all") }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(branch, { branch = it }, Modifier.weight(1f), singleLine = true, label = { Text("Branch name") })
+                        TextButton(onClick = { vm.gitCheckout(branch) }, enabled = branch.isNotBlank() && !vm.gitBusy) { Text("Switch") }
+                        TextButton(onClick = { vm.gitNewBranch(branch) }, enabled = branch.isNotBlank() && !vm.gitBusy) { Text("New") }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                SelectionContainer {
+                    Text(
+                        vm.gitText.ifEmpty { "Pick a folder above, or clone a repository. Unsaved edits are saved before a commit." },
+                        fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = TextCol,
+                        modifier = Modifier.fillMaxWidth().background(Panel).padding(8.dp),
+                    )
+                }
+            }
+        }
+    }
 }
