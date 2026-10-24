@@ -47,11 +47,11 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     var autoSave by mutableStateOf(prefs.getBoolean("autosave", true))
         private set
 
-    fun setLight(v: Boolean) { lightTheme = v; Pal.light = v; prefs.edit().putBoolean("light", v).apply() }
-    fun setFontSize(v: Int) { fontSize = v.coerceIn(10, 24); prefs.edit().putInt("font", fontSize).apply() }
-    fun setTabSize(v: Int) { tabSize = v; prefs.edit().putInt("tab", v).apply() }
-    fun setAutoSave(v: Boolean) { autoSave = v; prefs.edit().putBoolean("autosave", v).apply() }
-    fun resetSettings() { setLight(false); setFontSize(14); setTabSize(4); setAutoSave(true) }
+    fun updateLight(v: Boolean) { lightTheme = v; Pal.light = v; prefs.edit().putBoolean("light", v).apply() }
+    fun updateFontSize(v: Int) { fontSize = v.coerceIn(10, 24); prefs.edit().putInt("font", fontSize).apply() }
+    fun updateTabSize(v: Int) { tabSize = v; prefs.edit().putInt("tab", v).apply() }
+    fun updateAutoSave(v: Boolean) { autoSave = v; prefs.edit().putBoolean("autosave", v).apply() }
+    fun resetSettings() { updateLight(false); updateFontSize(14); updateTabSize(4); updateAutoSave(true) }
 
     val active: EditorTab? get() = tabs.getOrNull(activeIndex)
 

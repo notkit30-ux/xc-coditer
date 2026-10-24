@@ -183,7 +183,7 @@ fun XcApp(vm: EditorViewModel) {
             "Quick open file" to { showQuick = true },
             "New from template" to { showTemplates = true },
             "Settings" to { showSettings = true },
-            "Toggle light/dark theme" to { vm.setLight(!vm.lightTheme) },
+            "Toggle light/dark theme" to { vm.updateLight(!vm.lightTheme) },
             "Close tab" to { vm.closeTab(vm.activeIndex) },
         )
         CommandPalette(cmds) { palette = false }
@@ -474,24 +474,24 @@ private fun SettingsDialog(vm: EditorViewModel, onClose: () -> Unit) {
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Light theme", Modifier.weight(1f))
-                    Switch(checked = vm.lightTheme, onCheckedChange = { vm.setLight(it) })
+                    Switch(checked = vm.lightTheme, onCheckedChange = { vm.updateLight(it) })
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Font size: ${vm.fontSize}", Modifier.weight(1f))
-                    TextButton(onClick = { vm.setFontSize(vm.fontSize - 1) }) { Text("−") }
-                    TextButton(onClick = { vm.setFontSize(vm.fontSize + 1) }) { Text("+") }
+                    TextButton(onClick = { vm.updateFontSize(vm.fontSize - 1) }) { Text("−") }
+                    TextButton(onClick = { vm.updateFontSize(vm.fontSize + 1) }) { Text("+") }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Tab size", Modifier.weight(1f))
                     listOf(2, 4, 8).forEach { n ->
-                        TextButton(onClick = { vm.setTabSize(n) }) {
+                        TextButton(onClick = { vm.updateTabSize(n) }) {
                             Text(if (vm.tabSize == n) "[$n]" else "$n")
                         }
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Auto-save when leaving the app", Modifier.weight(1f))
-                    Switch(checked = vm.autoSave, onCheckedChange = { vm.setAutoSave(it) })
+                    Switch(checked = vm.autoSave, onCheckedChange = { vm.updateAutoSave(it) })
                 }
                 Text("Settings are stored privately on this device. Nothing is sent anywhere.", color = Dim, fontSize = 12.sp)
             }
