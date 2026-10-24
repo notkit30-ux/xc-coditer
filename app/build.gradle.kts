@@ -19,10 +19,23 @@ android {
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
     }
 
+    // Release signing reads the key from environment variables only (CI secrets). Nothing secret lives in this repo.
+    // Without them the release build is simply unsigned. See docs/RELEASE.md.
+    val ksPath: String? = System.getenv("XC_KEYSTORE_PATH")
+    signingConfigs {
+        if (ksPath != null) {
+            create("release") {
+                storeFile = file(ksPath)
+                storePassword = System.getenv("XC_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("XC_KEY_ALIAS")
+                keyPassword = System.getenv("XC_KEY_PASSWORD")
+            }
+        }
+    }
     buildTypes {
         release {
             isMinifyEnabled = false
-            // Signing: supply a keystore via CI secrets / local gradle.properties. Never commit one.
+            if (ksPath != null) signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {

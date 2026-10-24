@@ -1,0 +1,57 @@
+name: Release (signed)
+
+# Run manually (Actions tab > Release (signed) > Run workflow) or push a tag like v0.2.0.
+# Needs 4 repository secrets: XC_KEYSTORE_BASE64, XC_KEYSTORE_PASSWORD, XC_KEY_ALIAS, XC_KEY_PASSWORD (see docs/RELEASE.md).
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.10.2
+      - name: Check signing secrets exist
+        env:
+          B64: ${{ secrets.XC_KEYSTORE_BASE64 }}
+          PW: ${{ secrets.XC_KEYSTORE_PASSWORD }}
+          AL: ${{ secrets.XC_KEY_ALIAS }}
+          KP: ${{ secrets.XC_KEY_PASSWORD }}
+        run: |
+          if [ -z "$B64" ] || [ -z "$PW" ] || [ -z "$AL" ] || [ -z "$KP" ]; then
+            echo "::error::Signing secrets are missing. Add XC_KEYSTORE_BASE64, XC_KEYSTORE_PASSWORD, XC_KEY_ALIAS and XC_KEY_PASSWORD (see docs/RELEASE.md)."
+            exit 1
+          fi
+          echo "$B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+      - name: Build signed release APK
+        env:
+          XC_KEYSTORE_PATH: ${{ runner.temp }}/release.jks
+          XC_KEYSTORE_PASSWORD: ${{ secrets.XC_KEYSTORE_PASSWORD }}
+          XC_KEY_ALIAS: ${{ secrets.XC_KEY_ALIAS }}
+          XC_KEY_PASSWORD: ${{ secrets.XC_KEY_PASSWORD }}
+        run: gradle :app:assembleRelease --stacktrace
+      - name: Verify signature
+        run: |
+          APKSIGNER=$(ls $ANDROID_HOME/build-tools/*/apksigner | tail -1)
+          "$APKSIGNER" verify --print-certs app/build/outputs/apk/release/app-release.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xc-coditer-release-apk
+          path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+      - name: Attach to GitHub Release (tags only)
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" app/build/outputs/apk/release/app-release.apk --generate-notes
