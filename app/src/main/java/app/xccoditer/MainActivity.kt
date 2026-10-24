@@ -40,53 +40,37 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import java.io.File
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-
-private val Bg = Color(0xFF0E1117)
-private val Panel = Color(0xFF161B22)
-private val Accent = Color(0xFF38BDF8)
-private val Violet = Color(0xFFA78BFA)
-private val TextCol = Color(0xFFE6EDF3)
-private val Dim = Color(0xFF7D8590)
-
-private val XcColors = darkColorScheme(
-    primary = Accent, secondary = Violet, background = Bg, surface = Panel,
-    onPrimary = Bg, onBackground = TextCol, onSurface = TextCol,
-)
 
 class MainActivity : ComponentActivity() {
     private val vm: EditorViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { MaterialTheme(colorScheme = XcColors) { XcApp(vm) } }
+        setContent { MaterialTheme(colorScheme = xcColorScheme()) { XcApp(vm) } }
     }
 
     override fun onStop() {
         super.onStop()
-        vm.saveAll() // do not lose work when the app is backgrounded
+        vm.onAppStopped() // auto-save when backgrounded (if enabled in settings)
     }
 }
 
-private class Highlight(val lang: Lang) : VisualTransformation {
+private class Highlight(val lang: Lang, val light: Boolean) : VisualTransformation {
     override fun filter(text: AnnotatedString): TransformedText {
         val spans = Highlighter.tokenize(text.text, lang)
         val styled = buildAnnotatedString {
             append(text.text)
             for (s in spans) {
-                val c = when (s.kind) {
-                    TokenKind.COMMENT -> Color(0xFF6E7681)
-                    TokenKind.STRING -> Color(0xFFA5D6FF)
-                    TokenKind.NUMBER -> Color(0xFFF0883E)
-                    TokenKind.KEYWORD -> Color(0xFFFF7B72)
-                    TokenKind.TAG -> Color(0xFF7EE787)
-                }
+                val c = tokenColor(s.kind, light)
                 addStyle(SpanStyle(color = c), s.start, s.end)
             }
         }
@@ -104,6 +88,10 @@ fun XcApp(vm: EditorViewModel) {
     var findOpen by remember { mutableStateOf(false) }
     var goTo by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
+    var showSearch by remember { mutableStateOf(false) }
+    var showQuick by remember { mutableStateOf(false) }
+    var showTemplates by remember { mutableStateOf(false) }
 
     LaunchedEffect(vm.message) {
         vm.message?.let {
@@ -116,7 +104,7 @@ fun XcApp(vm: EditorViewModel) {
         drawerState = drawer,
         drawerContent = {
             ModalDrawerSheet(drawerContainerColor = Panel) {
-                Explorer(vm) { scope.launch { drawer.close() } }
+                Explorer(vm, onTemplates = { showTemplates = true }) { scope.launch { drawer.close() } }
             }
         },
     ) {
@@ -158,6 +146,10 @@ fun XcApp(vm: EditorViewModel) {
                                 DropdownMenuItem(text = { Text("Command palette") }, onClick = { menu = false; palette = true })
                                 DropdownMenuItem(text = { Text("Save all") }, onClick = { menu = false; vm.saveAll() })
                                 DropdownMenuItem(text = { Text("Go to line") }, onClick = { menu = false; goTo = true })
+                                DropdownMenuItem(text = { Text("Search in files") }, onClick = { menu = false; showSearch = true })
+                                DropdownMenuItem(text = { Text("Quick open file") }, onClick = { menu = false; showQuick = true })
+                                DropdownMenuItem(text = { Text("New from template") }, onClick = { menu = false; showTemplates = true })
+                                DropdownMenuItem(text = { Text("Settings") }, onClick = { menu = false; showSettings = true })
                             }
                         }
                     },
@@ -187,11 +179,20 @@ fun XcApp(vm: EditorViewModel) {
             "Find" to { findOpen = true },
             "Go to line" to { goTo = true },
             "Open explorer" to { scope.launch { drawer.open() } },
+            "Search in files" to { showSearch = true },
+            "Quick open file" to { showQuick = true },
+            "New from template" to { showTemplates = true },
+            "Settings" to { showSettings = true },
+            "Toggle light/dark theme" to { vm.setLight(!vm.lightTheme) },
             "Close tab" to { vm.closeTab(vm.activeIndex) },
         )
         CommandPalette(cmds) { palette = false }
     }
     vm.playPage?.let { PlayDialog(it) { vm.playPage = null } }
+    if (showSettings) SettingsDialog(vm) { showSettings = false }
+    if (showSearch) SearchDialog(vm) { showSearch = false }
+    if (showQuick) QuickOpenDialog(vm) { showQuick = false }
+    if (showTemplates) TemplateDialog(vm) { showTemplates = false }
     if (goTo) {
         TextPrompt("Go to line", "", "Line number", { goTo = false }) { s ->
             s.trim().toIntOrNull()?.let { vm.goToLine(it) }
@@ -231,8 +232,17 @@ private fun TabStrip(vm: EditorViewModel) {
 private fun CodeEditor(vm: EditorViewModel, tab: EditorTab) {
     val text = tab.value.text
     val lines = remember(text) { text.count { it == '\n' } + 1 }
-    val mono = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 14.sp, lineHeight = 20.sp, color = TextCol)
+    val mono = TextStyle(fontFamily = FontFamily.Monospace, fontSize = vm.fontSize.sp, lineHeight = (vm.fontSize * 1.45f).sp, color = TextCol)
     val vScroll = rememberScrollState()
+    val density = LocalDensity.current
+    LaunchedEffect(vm.scrollToLine, tab) {
+        vm.scrollToLine?.let { l ->
+            delay(80) // let the freshly opened tab lay out first
+            val px = with(density) { (vm.fontSize * 1.45f).sp.toPx() }
+            vScroll.animateScrollTo(((l - 1) * px).toInt().coerceAtLeast(0))
+            vm.scrollToLine = null
+        }
+    }
     Row(Modifier.fillMaxSize().verticalScroll(vScroll)) {
         Text(
             (1..lines).joinToString("\n"),
@@ -246,7 +256,7 @@ private fun CodeEditor(vm: EditorViewModel, tab: EditorTab) {
                     onValueChange = { vm.onEdit(tab, it) },
                     textStyle = mono,
                     cursorBrush = SolidColor(Accent),
-                    visualTransformation = Highlight(tab.lang),
+                    visualTransformation = Highlight(tab.lang, Pal.light),
                     modifier = Modifier.padding(8.dp).defaultMinSize(minWidth = 300.dp, minHeight = 400.dp),
                 )
             }
@@ -327,7 +337,7 @@ private sealed interface Dlg {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun Explorer(vm: EditorViewModel, closeDrawer: () -> Unit) {
+private fun Explorer(vm: EditorViewModel, onTemplates: () -> Unit, closeDrawer: () -> Unit) {
     var dlg by remember { mutableStateOf<Dlg?>(null) }
     var menuFor by remember { mutableStateOf<File?>(null) }
     val rows = vm.visibleTree()
@@ -337,6 +347,7 @@ private fun Explorer(vm: EditorViewModel, closeDrawer: () -> Unit) {
             Text("EXPLORER", color = Dim, fontSize = 12.sp, modifier = Modifier.weight(1f))
             TextButton(onClick = { dlg = Dlg.NewFile(vm.workspace.root) }) { Text("+ File") }
             TextButton(onClick = { dlg = Dlg.NewFolder(vm.workspace.root) }) { Text("+ Folder") }
+            TextButton(onClick = { closeDrawer(); onTemplates() }) { Text("Template") }
         }
         if (rows.isEmpty()) Text("Empty workspace", Modifier.padding(16.dp), color = Dim)
         LazyColumn {
@@ -450,4 +461,123 @@ private fun PlayDialog(page: PlayPage, onClose: () -> Unit) {
             }
         }
     }
+}
+
+@Composable
+private fun SettingsDialog(vm: EditorViewModel, onClose: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text("Settings") },
+        confirmButton = { TextButton(onClick = onClose) { Text("Done") } },
+        dismissButton = { TextButton(onClick = { vm.resetSettings() }) { Text("Reset") } },
+        text = {
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Light theme", Modifier.weight(1f))
+                    Switch(checked = vm.lightTheme, onCheckedChange = { vm.setLight(it) })
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Font size: ${vm.fontSize}", Modifier.weight(1f))
+                    TextButton(onClick = { vm.setFontSize(vm.fontSize - 1) }) { Text("−") }
+                    TextButton(onClick = { vm.setFontSize(vm.fontSize + 1) }) { Text("+") }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Tab size", Modifier.weight(1f))
+                    listOf(2, 4, 8).forEach { n ->
+                        TextButton(onClick = { vm.setTabSize(n) }) {
+                            Text(if (vm.tabSize == n) "[$n]" else "$n")
+                        }
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Auto-save when leaving the app", Modifier.weight(1f))
+                    Switch(checked = vm.autoSave, onCheckedChange = { vm.setAutoSave(it) })
+                }
+                Text("Settings are stored privately on this device. Nothing is sent anywhere.", color = Dim, fontSize = 12.sp)
+            }
+        },
+    )
+}
+
+@Composable
+private fun SearchDialog(vm: EditorViewModel, onClose: () -> Unit) {
+    var q by remember { mutableStateOf("") }
+    var r by remember { mutableStateOf("") }
+    var confirm by remember { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text("Search in files") },
+        confirmButton = { TextButton(onClick = { vm.searchProject(q) }) { Text("Search") } },
+        dismissButton = { TextButton(onClick = onClose) { Text("Close") } },
+        text = {
+            Column {
+                OutlinedTextField(q, { q = it }, singleLine = true, label = { Text("Find") })
+                OutlinedTextField(r, { r = it }, singleLine = true, label = { Text("Replace with") })
+                TextButton(onClick = { if (q.isNotEmpty()) confirm = true }) { Text("Replace in all files") }
+                Text(vm.searchInfo, color = Dim, fontSize = 12.sp)
+                LazyColumn(Modifier.heightIn(max = 240.dp)) {
+                    items(vm.searchResults) { m ->
+                        Text(
+                            m.file.relativeTo(vm.workspace.root).path + ":" + m.line + "  " + m.text,
+                            fontSize = 12.sp,
+                            maxLines = 2,
+                            modifier = Modifier.fillMaxWidth().clickable { vm.open(m.file, m.line); onClose() }.padding(vertical = 6.dp),
+                        )
+                    }
+                }
+            }
+        },
+    )
+    if (confirm) {
+        AlertDialog(
+            onDismissRequest = { confirm = false },
+            title = { Text("Replace in all files?") },
+            text = { Text("Replace \"$q\" with \"$r\" in every text file of this workspace. Files with unsaved changes are skipped. This writes to disk and cannot be undone.") },
+            confirmButton = { TextButton(onClick = { vm.replaceProject(q, r); confirm = false; onClose() }) { Text("Replace") } },
+            dismissButton = { TextButton(onClick = { confirm = false }) { Text("Cancel") } },
+        )
+    }
+}
+
+@Composable
+private fun QuickOpenDialog(vm: EditorViewModel, onClose: () -> Unit) {
+    var q by remember { mutableStateOf("") }
+    val all = remember { ProjectSearch.files(vm.workspace.root).take(5000).map { it to it.relativeTo(vm.workspace.root).path } }
+    val shown = all.filter { it.second.contains(q, ignoreCase = true) }.take(50)
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text("Quick open") },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onClose) { Text("Cancel") } },
+        text = {
+            Column {
+                OutlinedTextField(q, { q = it }, singleLine = true, label = { Text("File name") })
+                LazyColumn(Modifier.heightIn(max = 300.dp)) {
+                    items(shown) { (f, rel) ->
+                        Text(rel, Modifier.fillMaxWidth().clickable { vm.open(f); onClose() }.padding(12.dp))
+                    }
+                }
+            }
+        },
+    )
+}
+
+@Composable
+private fun TemplateDialog(vm: EditorViewModel, onClose: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text("New project from template") },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onClose) { Text("Cancel") } },
+        text = {
+            LazyColumn(Modifier.heightIn(max = 380.dp)) {
+                items(Templates.all) { t ->
+                    Column(Modifier.fillMaxWidth().clickable { vm.createFromTemplate(t); onClose() }.padding(vertical = 10.dp)) {
+                        Text(t.name)
+                        Text(t.howToRun, color = Dim, fontSize = 12.sp)
+                    }
+                }
+            }
+        },
+    )
 }

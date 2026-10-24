@@ -1,6 +1,7 @@
 package app.xccoditer
 
 import android.app.Application
+import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -26,18 +27,36 @@ class EditorTab(val file: File, initial: String) {
 data class PlayPage(val title: String, val html: String)
 
 class EditorViewModel(app: Application) : AndroidViewModel(app) {
-    val workspace = Workspace(java.io.File(app.filesDir, "workspace"))
+    val workspace = Workspace(File(app.filesDir, "workspace"))
     val tabs = mutableStateListOf<EditorTab>()
     var activeIndex by mutableStateOf(0)
     val expanded = mutableStateListOf<String>()
     var treeVersion by mutableStateOf(0)
     var message by mutableStateOf<String?>(null)
     var playPage by mutableStateOf<PlayPage?>(null)
-    val tabSize = 4
+    var scrollToLine by mutableStateOf<Int?>(null)
+
+    // ---- settings (persisted in app-private SharedPreferences) ----
+    private val prefs = app.getSharedPreferences("xc_settings", Context.MODE_PRIVATE)
+    var lightTheme by mutableStateOf(prefs.getBoolean("light", false))
+        private set
+    var fontSize by mutableStateOf(prefs.getInt("font", 14))
+        private set
+    var tabSize by mutableStateOf(prefs.getInt("tab", 4))
+        private set
+    var autoSave by mutableStateOf(prefs.getBoolean("autosave", true))
+        private set
+
+    fun setLight(v: Boolean) { lightTheme = v; Pal.light = v; prefs.edit().putBoolean("light", v).apply() }
+    fun setFontSize(v: Int) { fontSize = v.coerceIn(10, 24); prefs.edit().putInt("font", fontSize).apply() }
+    fun setTabSize(v: Int) { tabSize = v; prefs.edit().putInt("tab", v).apply() }
+    fun setAutoSave(v: Boolean) { autoSave = v; prefs.edit().putBoolean("autosave", v).apply() }
+    fun resetSettings() { setLight(false); setFontSize(14); setTabSize(4); setAutoSave(true) }
 
     val active: EditorTab? get() = tabs.getOrNull(activeIndex)
 
     init {
+        Pal.light = lightTheme
         seedIfEmpty()
     }
 
@@ -85,10 +104,11 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- file operations (disk work off the main thread) ----
 
-    fun open(file: File) {
+    fun open(file: File, line: Int? = null) {
         val existing = tabs.indexOfFirst { it.file == file }
         if (existing >= 0) {
             activeIndex = existing
+            line?.let { goToLine(it) }
             return
         }
         viewModelScope.launch {
@@ -96,6 +116,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 .onSuccess {
                     tabs.add(EditorTab(file, it))
                     activeIndex = tabs.lastIndex
+                    line?.let { l -> goToLine(l) }
                 }
                 .onFailure(::fail)
         }
@@ -119,6 +140,11 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
     fun saveAll() = tabs.filter { it.dirty }.forEach { save(it) }
 
+    /** Called when the app is backgrounded. */
+    fun onAppStopped() {
+        if (autoSave) saveAll()
+    }
+
     fun createFile(parent: File, name: String) = runCatching {
         val f = workspace.createFile(parent, name)
         if (parent != workspace.root && parent.path !in expanded) expanded.add(parent.path)
@@ -132,10 +158,21 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         refreshTree()
     }.onFailure(::fail)
 
+    fun createFromTemplate(t: Template) = runCatching {
+        val dir = workspace.createFolder(workspace.root, workspace.uniqueChildName(workspace.root, t.id))
+        workspace.writeTree(dir, t.files)
+        expanded.add(dir.path)
+        t.files.keys.filter { it.contains('/') }.map { it.substringBeforeLast('/') }.distinct().forEach { sub ->
+            expanded.add(File(dir, sub).path)
+        }
+        refreshTree()
+        t.files.keys.firstOrNull { it.endsWith(".html") || it.endsWith(".sql") || it.endsWith(".js") || it.endsWith(".py") }
+            ?.let { open(File(dir, it)) } ?: open(File(dir, t.files.keys.first()))
+        message = t.howToRun
+    }.onFailure(::fail)
+
     fun rename(f: File, newName: String) = runCatching {
         val target = workspace.rename(f, newName)
-        // Re-point open tabs: simplest correct behaviour is to close affected tabs (unsaved edits would be lost,
-        // so only allow rename when none of them are dirty).
         refreshTree()
         tabs.removeAll { it.file == f || it.file.path.startsWith(f.path + File.separator) }
         activeIndex = activeIndex.coerceAtMost(tabs.lastIndex).coerceAtLeast(0)
@@ -231,13 +268,57 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
     fun play() {
         val tab = active ?: return
+        if (tab.file.extension.equals("sql", ignoreCase = true)) {
+            val script = tab.value.text
+            viewModelScope.launch {
+                val html = withContext(Dispatchers.Default) { SqlRunner.runToHtml(script) }
+                playPage = PlayPage(tab.file.name, html)
+            }
+            return
+        }
         when (val r = Play.build(tab.file.name, tab.lang, tab.value.text) { readSibling(tab.file, it) }) {
             is PlayResult.Page -> playPage = PlayPage(tab.file.name, r.html)
             is PlayResult.Unsupported -> message = r.reason
         }
     }
 
-    // ---- find / replace ----
+    // ---- search across files ----
+
+    var searchResults by mutableStateOf<List<Match>>(emptyList())
+        private set
+    var searchInfo by mutableStateOf("")
+        private set
+
+    fun searchProject(query: String) {
+        if (query.isEmpty()) return
+        viewModelScope.launch {
+            searchInfo = "Searching…"
+            val r = withContext(Dispatchers.IO) { ProjectSearch.search(workspace.root, query) }
+            searchResults = r
+            searchInfo = "${r.size} match(es)" + if (r.size >= ProjectSearch.MAX_RESULTS) " (showing the first ${ProjectSearch.MAX_RESULTS})" else ""
+        }
+    }
+
+    /** Replaces in files without unsaved editor changes; reports skipped files. */
+    fun replaceProject(query: String, with: String) {
+        if (query.isEmpty()) return
+        viewModelScope.launch {
+            val dirty = tabs.filter { it.dirty }.map { it.file }.toSet()
+            val (done, skipped) = withContext(Dispatchers.IO) {
+                val files = ProjectSearch.matchingFiles(workspace.root, query)
+                ProjectSearch.replace(files.filter { it !in dirty }, query, with) to files.count { it in dirty }
+            }
+            tabs.removeAll { it.file in done.keys }
+            activeIndex = activeIndex.coerceAtMost(tabs.lastIndex).coerceAtLeast(0)
+            searchResults = emptyList()
+            searchInfo = ""
+            refreshTree()
+            message = "Replaced ${done.values.sum()} occurrence(s) in ${done.size} file(s)" +
+                if (skipped > 0) "; skipped $skipped file(s) with unsaved changes" else ""
+        }
+    }
+
+    // ---- find / replace in the current file ----
 
     fun findNext(query: String): Boolean {
         val tab = active ?: return false
@@ -250,17 +331,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         return true
     }
 
-    fun countMatches(query: String): Int {
-        val tab = active ?: return 0
-        if (query.isEmpty()) return 0
-        var n = 0
-        var i = tab.value.text.indexOf(query, 0, ignoreCase = true)
-        while (i >= 0) {
-            n++
-            i = tab.value.text.indexOf(query, i + query.length, ignoreCase = true)
-        }
-        return n
-    }
+    fun countMatches(query: String): Int = ProjectSearch.countOccurrences(active?.value?.text ?: "", query)
 
     fun replaceAll(query: String, with: String): Int {
         val tab = active ?: return 0
@@ -284,5 +355,6 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             l++
         }
         tab.value = tab.value.copy(selection = TextRange(idx))
+        scrollToLine = l
     }
 }

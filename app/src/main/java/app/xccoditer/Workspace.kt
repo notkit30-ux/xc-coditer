@@ -79,3 +79,22 @@ class Workspace(root: File) {
         const val MAX_OPEN_BYTES = 2L * 1024 * 1024
     }
 }
+
+/** Name that does not clash inside [parent]: base, base-2, base-3 ... */
+fun Workspace.uniqueChildName(parent: File, base: String): String {
+    var name = base
+    var i = 2
+    while (File(parent, name).exists()) { name = "$base-$i"; i++ }
+    return name
+}
+
+/** Writes relative-path files (subfolders allowed, no "..", no absolute paths) into [dir]. */
+fun Workspace.writeTree(dir: File, files: Map<String, String>) {
+    for ((rel, text) in files) {
+        require(rel.isNotBlank() && !rel.startsWith("/") && rel.split('/').none { it.isEmpty() || it == ".." || it == "." }) { "Invalid path: $rel" }
+        val f = File(dir, rel).canonicalFile
+        require(contains(f)) { "Path is outside the workspace" }
+        f.parentFile!!.mkdirs()
+        write(f, text)
+    }
+}

@@ -17,6 +17,10 @@ Honest feature status. "Implemented" means the code exists; only items marked *u
 | Mobile accessory key bar | Implemented (UI not yet run on a device) |
 | **Instant Play (▶)**: HTML and JavaScript run in an offline WebView sandbox (JS on, network blocked, no file access); same-folder CSS/JS are inlined; console output shown | Logic unit-tested; WebView not yet run on a device |
 | **Suggestions while typing**: snippets, keywords and words from your file (rule-based, not a language server) | Logic unit-tested; UI not yet run on a device |
+| **SQL / SQLite**: Play on a `.sql` file runs it on Android's real SQLite engine (fresh in-memory DB each run, 10s query limit, 500-row cap), results shown as tables, errors shown as-is | Splitter and HTML output unit-tested; engine call not yet run on a device |
+| **Settings**: light/dark theme, font size, tab size, auto-save, reset (stored privately on device) | Implemented (UI not yet run on a device). Import/export of settings not yet built |
+| **Search and replace across files**, quick open by file name, jump to match line | Search/replace logic unit-tested; UI not yet run on a device |
+| **Project templates** (website, JS, TypeScript, Python, Java, Kotlin, C, C++, PHP, SQL, Markdown) | Unit-tested; each says honestly whether it can run in-app |
 | **Running / compiling other languages** (Python, Java, C, ...) | **Not implemented yet** (Phase 3) |
 | Terminal, extensions, Git, LSP, debugging, SQLite, web preview | Not implemented yet |
 
