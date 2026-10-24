@@ -1,0 +1,30 @@
+{
+  "id": "xc.python-snippets",
+  "name": "Python snippets",
+  "version": "1.0.0",
+  "publisher": "XC CODITER",
+  "description": "Common Python patterns.",
+  "permissions": [],
+  "contributes": {
+    "snippets": {
+      "python": [
+        {
+          "label": "readfile",
+          "insert": "with open('§') as f:\n    data = f.read()"
+        },
+        {
+          "label": "listcomp",
+          "insert": "[x for x in § if x]"
+        },
+        {
+          "label": "initclass",
+          "insert": "class §:\n    def __init__(self):\n        pass"
+        },
+        {
+          "label": "argparse",
+          "insert": "import argparse\n\nparser = argparse.ArgumentParser()\nparser.add_argument('§')\nargs = parser.parse_args()"
+        }
+      ]
+    }
+  }
+}

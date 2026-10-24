@@ -1,0 +1,26 @@
+{
+  "id": "xc.kotlin-snippets",
+  "name": "Kotlin snippets",
+  "version": "1.0.0",
+  "publisher": "XC CODITER",
+  "description": "Common Kotlin patterns.",
+  "permissions": [],
+  "contributes": {
+    "snippets": {
+      "kotlin": [
+        {
+          "label": "dataclass",
+          "insert": "data class §(val name: String)"
+        },
+        {
+          "label": "lazyval",
+          "insert": "val § by lazy {\n    \n}"
+        },
+        {
+          "label": "letnull",
+          "insert": "§?.let {\n    \n}"
+        }
+      ]
+    }
+  }
+}

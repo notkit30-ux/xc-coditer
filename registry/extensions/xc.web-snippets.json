@@ -1,0 +1,42 @@
+{
+  "id": "xc.web-snippets",
+  "name": "Web snippets",
+  "version": "1.0.0",
+  "publisher": "XC CODITER",
+  "description": "Handy HTML, CSS and JavaScript snippets.",
+  "permissions": [],
+  "contributes": {
+    "snippets": {
+      "html": [
+        {
+          "label": "card",
+          "insert": "<div class=\"card\">\n  <h2>§</h2>\n  <p></p>\n</div>"
+        },
+        {
+          "label": "navbar",
+          "insert": "<nav>\n  <a href=\"#\">§</a>\n</nav>"
+        }
+      ],
+      "css": [
+        {
+          "label": "center",
+          "insert": "margin: 0 auto;\ntext-align: center;§"
+        },
+        {
+          "label": "shadow",
+          "insert": "box-shadow: 0 2px 8px rgba(0,0,0,0.3);§"
+        }
+      ],
+      "javascript": [
+        {
+          "label": "fetchjson",
+          "insert": "fetch('§').then(r => r.json()).then(data => console.log(data))"
+        },
+        {
+          "label": "listener",
+          "insert": "document.querySelector('§').addEventListener('click', () => {\n  \n})"
+        }
+      ]
+    }
+  }
+}

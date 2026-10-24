@@ -1,0 +1,26 @@
+{
+  "id": "xc.sql-snippets",
+  "name": "SQL snippets",
+  "version": "1.0.0",
+  "publisher": "XC CODITER",
+  "description": "Common SQL patterns.",
+  "permissions": [],
+  "contributes": {
+    "snippets": {
+      "sql": [
+        {
+          "label": "joinq",
+          "insert": "SELECT a.*, b.*\nFROM § a\nJOIN b ON a.id = b.a_id;"
+        },
+        {
+          "label": "groupcount",
+          "insert": "SELECT §, COUNT(*) AS n\nFROM t\nGROUP BY 1\nORDER BY n DESC;"
+        },
+        {
+          "label": "upsert",
+          "insert": "INSERT INTO § (id, name) VALUES (1, 'x')\nON CONFLICT(id) DO UPDATE SET name = excluded.name;"
+        }
+      ]
+    }
+  }
+}

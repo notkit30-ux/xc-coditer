@@ -82,6 +82,36 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             .onFailure { message = "Install failed: ${it.message}" }
     }
 
+    var registryUrl by mutableStateOf(prefs.getString("registry_url", Registry.DEFAULT_URL) ?: Registry.DEFAULT_URL)
+        private set
+    var registryEntries by mutableStateOf<List<RegistryEntry>?>(null)
+        private set
+    var registryStatus by mutableStateOf("")
+        private set
+
+    fun setRegistry(url: String) {
+        runCatching { Registry.requireHttps(url) }
+            .onSuccess { registryUrl = it; prefs.edit().putString("registry_url", it).apply(); registryEntries = null; registryStatus = "" }
+            .onFailure { registryStatus = it.message ?: "Invalid URL" }
+    }
+
+    fun browseRegistry() {
+        viewModelScope.launch {
+            registryStatus = "Contacting ${runCatching { java.net.URI(registryUrl).host }.getOrNull() ?: "registry"}…"
+            runCatching { withContext(Dispatchers.IO) { Registry.fetchIndex(registryUrl) } }
+                .onSuccess { registryEntries = it; registryStatus = "${it.size} extension(s) listed" }
+                .onFailure { registryEntries = null; registryStatus = GitOps.friendly(it).let { m -> if (m.startsWith("Server") || m.startsWith("Registry") || m.startsWith("No internet")) m else (it.message ?: m) } }
+        }
+    }
+
+    fun installFromRegistry(e: RegistryEntry) {
+        viewModelScope.launch {
+            runCatching { withContext(Dispatchers.IO) { Registry.install(e, registryUrl, extensionStore) } }
+                .onSuccess { reloadExtensions(); message = "Installed ${it.name} ${it.version} (hash verified)" }
+                .onFailure { message = "Install failed: ${it.message}" }
+        }
+    }
+
     fun setExtensionEnabled(id: String, enabled: Boolean) { extensionStore.setEnabled(id, enabled); reloadExtensions() }
     fun uninstallExtension(id: String) { extensionStore.uninstall(id); reloadExtensions() }
 

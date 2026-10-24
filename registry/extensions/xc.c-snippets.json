@@ -1,0 +1,22 @@
+{
+  "id": "xc.c-snippets",
+  "name": "C snippets",
+  "version": "1.0.0",
+  "publisher": "XC CODITER",
+  "description": "Common C patterns.",
+  "permissions": [],
+  "contributes": {
+    "snippets": {
+      "c": [
+        {
+          "label": "mallocarr",
+          "insert": "int *arr = malloc(§ * sizeof(int));\nif (!arr) return 1;\nfree(arr);"
+        },
+        {
+          "label": "readline",
+          "insert": "char buf[256];\nfgets(buf, sizeof buf, stdin);§"
+        }
+      ]
+    }
+  }
+}

@@ -33,8 +33,12 @@ XC CODITER extensions are **data-only** today. They add snippets. They cannot ru
 2. **Enable / disable**: disabled extensions stay installed but contribute nothing.
 3. **Uninstall**: removes the manifest.
 
-Invalid manifests are rejected with the reason shown. Nothing is fetched from the internet: install by pasting JSON, or from the bundled list.
+Invalid manifests are rejected with the reason shown. You can install by pasting JSON, from the bundled list, or from an online registry.
+
+## Online registry
+
+The default registry is the `registry/` folder of this repository (`registry/index.json`, see `registry/README.md`). In the app: Extensions > Browse. You can point the app at any other https registry with the same format. Every manifest is downloaded over https, limited to 200 KB, and checked against the SHA-256 in the index before install; the manifest's id and version must match its listing. The network is used only when you press Browse or Install.
 
 ## Future (not built)
 
-A hosted registry, themes, formatters and sandboxed code extensions would each need their own permission model before shipping.
+Themes, formatters and sandboxed code extensions would each need their own permission model before shipping.

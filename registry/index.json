@@ -1,0 +1,68 @@
+{
+  "registry": 1,
+  "name": "XC CODITER official registry",
+  "extensions": [
+    {
+      "id": "xc.web-snippets",
+      "name": "Web snippets",
+      "version": "1.0.0",
+      "publisher": "XC CODITER",
+      "description": "Handy HTML, CSS and JavaScript snippets.",
+      "languages": [
+        "css",
+        "html",
+        "javascript"
+      ],
+      "url": "extensions/xc.web-snippets.json",
+      "sha256": "5c11cae458c8ce1a7c901664d12fe431b9cc14c344341e296bd7bf134d320d1e"
+    },
+    {
+      "id": "xc.python-snippets",
+      "name": "Python snippets",
+      "version": "1.0.0",
+      "publisher": "XC CODITER",
+      "description": "Common Python patterns.",
+      "languages": [
+        "python"
+      ],
+      "url": "extensions/xc.python-snippets.json",
+      "sha256": "1da93f5499c7d99e71e21f3e2c9caef89373b79771c04e809fc303edb73f1258"
+    },
+    {
+      "id": "xc.c-snippets",
+      "name": "C snippets",
+      "version": "1.0.0",
+      "publisher": "XC CODITER",
+      "description": "Common C patterns.",
+      "languages": [
+        "c"
+      ],
+      "url": "extensions/xc.c-snippets.json",
+      "sha256": "1532d769838224378cf325e33752a11e938a4572567c5667999dcbe914adfbb9"
+    },
+    {
+      "id": "xc.kotlin-snippets",
+      "name": "Kotlin snippets",
+      "version": "1.0.0",
+      "publisher": "XC CODITER",
+      "description": "Common Kotlin patterns.",
+      "languages": [
+        "kotlin"
+      ],
+      "url": "extensions/xc.kotlin-snippets.json",
+      "sha256": "c03f61e7678770c30f6fd7a513ed269b78793792e37662626b38c0cd030660b7"
+    },
+    {
+      "id": "xc.sql-snippets",
+      "name": "SQL snippets",
+      "version": "1.0.0",
+      "publisher": "XC CODITER",
+      "description": "Common SQL patterns.",
+      "languages": [
+        "sql"
+      ],
+      "url": "extensions/xc.sql-snippets.json",
+      "sha256": "4b70c8ea31b6357423b33f24711590958735deccb41337b3679a35671bf2ff2b"
+    }
+  ]
+}

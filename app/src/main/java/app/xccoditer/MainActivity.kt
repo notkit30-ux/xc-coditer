@@ -766,6 +766,33 @@ private fun ExtensionsDialog(vm: EditorViewModel, onClose: () -> Unit) {
                     }
                 }
                 item {
+                    var q by remember { mutableStateOf("") }
+                    var urlText by remember { mutableStateOf(vm.registryUrl) }
+                    Text("ONLINE REGISTRY", Modifier.padding(top = 10.dp), color = Dim, fontSize = 12.sp)
+                    OutlinedTextField(urlText, { urlText = it }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Registry URL (https)") })
+                    Row {
+                        TextButton(onClick = { vm.setRegistry(urlText); vm.browseRegistry() }) { Text("Browse") }
+                        TextButton(onClick = { urlText = Registry.DEFAULT_URL; vm.setRegistry(Registry.DEFAULT_URL) }) { Text("Use official") }
+                    }
+                    Text("The network is used only when you press Browse or Install. Every download is checked against the registry's SHA-256 hash.", color = Dim, fontSize = 11.sp)
+                    if (vm.registryStatus.isNotEmpty()) Text(vm.registryStatus, color = Violet, fontSize = 12.sp)
+                    vm.registryEntries?.let { all ->
+                        OutlinedTextField(q, { q = it }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Search name or language") })
+                        Registry.search(all, q).forEach { e ->
+                            val cur = installed.firstOrNull { it.ext.id == e.id }
+                            Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(e.name + "  " + e.version)
+                                    Text(e.publisher + " · " + e.languages.joinToString(", ") + "\n" + e.description, color = Dim, fontSize = 11.sp)
+                                }
+                                TextButton(onClick = { vm.installFromRegistry(e) }, enabled = cur == null || cur.ext.version != e.version) {
+                                    Text(if (cur == null) "Install" else if (cur.ext.version == e.version) "Installed" else "Update")
+                                }
+                            }
+                        }
+                    }
+                }
+                item {
                     Text("INSTALL FROM JSON", Modifier.padding(top = 10.dp), color = Dim, fontSize = 12.sp)
                     OutlinedTextField(json, { json = it }, Modifier.fillMaxWidth().heightIn(max = 140.dp), label = { Text("Paste a manifest") })
                     TextButton(onClick = { vm.installExtension(json) }, enabled = json.isNotBlank()) { Text("Install") }
