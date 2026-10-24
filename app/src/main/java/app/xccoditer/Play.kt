@@ -20,12 +20,13 @@ object Play {
     private val headTag = Regex("""<head\b[^>]*>""", RegexOption.IGNORE_CASE)
     private val htmlTag = Regex("""<html\b[^>]*>""", RegexOption.IGNORE_CASE)
 
-    fun canPlay(fileName: String): Boolean = ext(fileName) in setOf("html", "htm", "svg", "js", "mjs")
+    fun canPlay(fileName: String): Boolean = ext(fileName) in setOf("html", "htm", "svg", "js", "mjs", "md", "markdown")
 
     fun build(fileName: String, lang: Lang, text: String, readLocal: (String) -> String?): PlayResult {
         return when (ext(fileName)) {
             "html", "htm", "svg" -> PlayResult.Page(injectConsole(inlineAssets(text, readLocal), full = false))
             "js", "mjs" -> PlayResult.Page(injectConsole(jsPage(text), full = true))
+            "md", "markdown" -> PlayResult.Page(Markdown.page(text))
             "ts", "tsx" -> PlayResult.Unsupported("TypeScript needs a transpiler, which isn't built yet. Write plain JavaScript (.js) to play it now.")
             "css" -> PlayResult.Unsupported("CSS plays inside an HTML file that links it. Open your .html file and press Play.")
             else -> PlayResult.Unsupported(

@@ -15,6 +15,9 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
@@ -40,7 +43,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -92,6 +97,9 @@ fun XcApp(vm: EditorViewModel) {
     var showSearch by remember { mutableStateOf(false) }
     var showQuick by remember { mutableStateOf(false) }
     var showTemplates by remember { mutableStateOf(false) }
+    var showTerminal by remember { mutableStateOf(false) }
+    var showRuntimes by remember { mutableStateOf(false) }
+    var showExt by remember { mutableStateOf(false) }
 
     LaunchedEffect(vm.message) {
         vm.message?.let {
@@ -149,6 +157,9 @@ fun XcApp(vm: EditorViewModel) {
                                 DropdownMenuItem(text = { Text("Search in files") }, onClick = { menu = false; showSearch = true })
                                 DropdownMenuItem(text = { Text("Quick open file") }, onClick = { menu = false; showQuick = true })
                                 DropdownMenuItem(text = { Text("New from template") }, onClick = { menu = false; showTemplates = true })
+                                DropdownMenuItem(text = { Text("Terminal") }, onClick = { menu = false; showTerminal = true })
+                                DropdownMenuItem(text = { Text("Runtime Manager") }, onClick = { menu = false; showRuntimes = true })
+                                DropdownMenuItem(text = { Text("Extensions") }, onClick = { menu = false; showExt = true })
                                 DropdownMenuItem(text = { Text("Settings") }, onClick = { menu = false; showSettings = true })
                             }
                         }
@@ -183,6 +194,9 @@ fun XcApp(vm: EditorViewModel) {
             "Quick open file" to { showQuick = true },
             "New from template" to { showTemplates = true },
             "Settings" to { showSettings = true },
+            "Terminal" to { showTerminal = true },
+            "Runtime Manager" to { showRuntimes = true },
+            "Extensions" to { showExt = true },
             "Toggle light/dark theme" to { vm.updateLight(!vm.lightTheme) },
             "Close tab" to { vm.closeTab(vm.activeIndex) },
         )
@@ -193,6 +207,9 @@ fun XcApp(vm: EditorViewModel) {
     if (showSearch) SearchDialog(vm) { showSearch = false }
     if (showQuick) QuickOpenDialog(vm) { showQuick = false }
     if (showTemplates) TemplateDialog(vm) { showTemplates = false }
+    if (showTerminal) TerminalDialog(vm) { showTerminal = false }
+    if (showRuntimes) RuntimeManagerDialog { showRuntimes = false }
+    if (showExt) ExtensionsDialog(vm) { showExt = false }
     if (goTo) {
         TextPrompt("Go to line", "", "Line number", { goTo = false }) { s ->
             s.trim().toIntOrNull()?.let { vm.goToLine(it) }
@@ -493,6 +510,11 @@ private fun SettingsDialog(vm: EditorViewModel, onClose: () -> Unit) {
                     Text("Auto-save when leaving the app", Modifier.weight(1f))
                     Switch(checked = vm.autoSave, onCheckedChange = { vm.updateAutoSave(it) })
                 }
+                val clip = LocalClipboardManager.current
+                Row {
+                    TextButton(onClick = { clip.setText(AnnotatedString(vm.exportSettings())); vm.message = "Settings copied to clipboard" }) { Text("Copy settings") }
+                    TextButton(onClick = { vm.importSettings(clip.getText()?.text ?: "") }) { Text("Paste settings") }
+                }
                 Text("Settings are stored privately on this device. Nothing is sent anywhere.", color = Dim, fontSize = 12.sp)
             }
         },
@@ -576,6 +598,141 @@ private fun TemplateDialog(vm: EditorViewModel, onClose: () -> Unit) {
                         Text(t.name)
                         Text(t.howToRun, color = Dim, fontSize = 12.sp)
                     }
+                }
+            }
+        },
+    )
+}
+
+@Composable
+private fun TerminalDialog(vm: EditorViewModel, onClose: () -> Unit) {
+    LaunchedEffect(Unit) { vm.ensureTerminal() }
+    val clip = LocalClipboardManager.current
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(Modifier.fillMaxSize(), color = Bg) {
+            Column(Modifier.statusBarsPadding().imePadding()) {
+                Row(Modifier.fillMaxWidth().background(Panel).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+                    vm.terminals.forEachIndexed { i, t ->
+                        TextButton(onClick = { vm.activeTerminal = i }) {
+                            Text(t.title + if (t.running) " ●" else "", color = if (i == vm.activeTerminal) Accent else Dim)
+                        }
+                    }
+                    TextButton(onClick = { vm.newTerminal() }) { Text("+") }
+                    TextButton(onClick = { vm.closeTerminal(vm.activeTerminal) }) { Text("Close tab") }
+                    TextButton(onClick = {
+                        vm.terminals.getOrNull(vm.activeTerminal)?.let { clip.setText(AnnotatedString(it.lines.joinToString("\n"))) }
+                        vm.message = "Output copied"
+                    }) { Text("Copy") }
+                    TextButton(onClick = onClose) { Text("Exit") }
+                }
+                val tab = vm.terminals.getOrNull(vm.activeTerminal)
+                if (tab == null) {
+                    Text("No terminal open", Modifier.padding(16.dp), color = Dim)
+                } else {
+                    val listState = rememberLazyListState()
+                    LaunchedEffect(tab.lines.size) { if (tab.lines.isNotEmpty()) listState.scrollToItem(tab.lines.lastIndex) }
+                    Text("Android shell (not full Linux). Type help.", Modifier.padding(horizontal = 8.dp, vertical = 4.dp), color = Dim, fontSize = 11.sp)
+                    LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 8.dp), state = listState) {
+                        items(count = tab.lines.size) { i ->
+                            Text(tab.lines[i], fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = TextCol)
+                        }
+                    }
+                    Text(tab.cwd.path, Modifier.padding(horizontal = 8.dp), color = Dim, fontSize = 11.sp, maxLines = 1)
+                    var input by remember(tab) { mutableStateOf("") }
+                    val send = { vm.runCommand(tab, input); input = "" }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(
+                            input, { input = it }, Modifier.weight(1f).padding(start = 8.dp), singleLine = true,
+                            textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 13.sp, color = TextCol),
+                            placeholder = { Text("command") },
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                            keyboardActions = KeyboardActions(onSend = { send() }),
+                        )
+                        TextButton(onClick = {
+                            if (tab.history.isNotEmpty()) {
+                                tab.historyPos = if (tab.historyPos < 0) tab.history.lastIndex else (tab.historyPos - 1).coerceAtLeast(0)
+                                input = tab.history[tab.historyPos]
+                            }
+                        }) { Text("↑") }
+                        if (tab.running) TextButton(onClick = { tab.stop() }) { Text("Stop") }
+                        else TextButton(onClick = { send() }) { Text("Run") }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RuntimeManagerDialog(onClose: () -> Unit) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    var list by remember { mutableStateOf<List<RuntimeInfo>?>(null) }
+    LaunchedEffect(Unit) { list = RuntimeCheck.collect(ctx) }
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text("Runtime Manager") },
+        confirmButton = { TextButton(onClick = onClose) { Text("Close") } },
+        text = {
+            val l = list
+            if (l == null) Text("Running self-tests on this device…", color = Dim)
+            else LazyColumn(Modifier.heightIn(max = 420.dp)) {
+                items(l) { r ->
+                    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                        Text(r.name, color = TextCol)
+                        Text(
+                            r.status.label + (if (r.version != "-") "  ·  " + r.version else ""),
+                            color = if (r.status == RuntimeStatus.VERIFIED) Accent else Violet, fontSize = 12.sp,
+                        )
+                        Text("Offline: " + (if (r.offline) "yes" else "no") + "  ·  Size: " + r.size, color = Dim, fontSize = 12.sp)
+                        Text(r.note, color = Dim, fontSize = 12.sp)
+                    }
+                }
+            }
+        },
+    )
+}
+
+@Composable
+private fun ExtensionsDialog(vm: EditorViewModel, onClose: () -> Unit) {
+    val installed = vm.installedExtensions()
+    val bundled = remember { OfficialExtensions.all.map { ExtensionManifest.parse(it) to it } }
+    var json by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text("Extensions") },
+        confirmButton = { TextButton(onClick = onClose) { Text("Close") } },
+        text = {
+            LazyColumn(Modifier.heightIn(max = 460.dp)) {
+                item { Text("INSTALLED", color = Dim, fontSize = 12.sp) }
+                if (installed.isEmpty()) item { Text("None yet", Modifier.padding(vertical = 6.dp), color = Dim) }
+                items(installed) { i ->
+                    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(i.ext.name + "  " + i.ext.version)
+                            Text(i.ext.publisher + " · permissions: none · data-only", color = Dim, fontSize = 11.sp)
+                        }
+                        Switch(checked = i.enabled, onCheckedChange = { vm.setExtensionEnabled(i.ext.id, it) })
+                        TextButton(onClick = { vm.uninstallExtension(i.ext.id) }) { Text("Remove") }
+                    }
+                }
+                item { Text("AVAILABLE (bundled with the app; no online registry yet)", Modifier.padding(top = 10.dp), color = Dim, fontSize = 12.sp) }
+                items(bundled) { (e, raw) ->
+                    val cur = installed.firstOrNull { it.ext.id == e.id }
+                    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(e.name + "  " + e.version)
+                            Text(e.description, color = Dim, fontSize = 11.sp)
+                        }
+                        TextButton(onClick = { vm.installExtension(raw) }, enabled = cur == null || cur.ext.version != e.version) {
+                            Text(if (cur == null) "Install" else if (cur.ext.version == e.version) "Installed" else "Update")
+                        }
+                    }
+                }
+                item {
+                    Text("INSTALL FROM JSON", Modifier.padding(top = 10.dp), color = Dim, fontSize = 12.sp)
+                    OutlinedTextField(json, { json = it }, Modifier.fillMaxWidth().heightIn(max = 140.dp), label = { Text("Paste a manifest") })
+                    TextButton(onClick = { vm.installExtension(json) }, enabled = json.isNotBlank()) { Text("Install") }
+                    Text("Extensions are data-only (snippets). They cannot run code, read your files or use the network. Format: docs/EXTENSIONS.md", color = Dim, fontSize = 11.sp)
                 }
             }
         },

@@ -1,0 +1,79 @@
+package app.xccoditer
+
+import android.content.Context
+import android.database.DatabaseUtils
+import android.database.sqlite.SQLiteDatabase
+import android.os.Build
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import kotlin.coroutines.resume
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+
+/** Live checks: a runtime is only shown as verified after a real execution test passes on this device. */
+object RuntimeCheck {
+    suspend fun collect(ctx: Context): List<RuntimeInfo> {
+        val out = ArrayList<RuntimeInfo>()
+
+        val sqlite = withContext(Dispatchers.IO) {
+            runCatching {
+                val db = SQLiteDatabase.create(null)
+                try {
+                    val v = DatabaseUtils.stringForQuery(db, "select sqlite_version()", null)
+                    val r = DatabaseUtils.longForQuery(db, "select 6*7", null)
+                    if (r == 42L) v else null
+                } finally { db.close() }
+            }.getOrNull()
+        }
+        out += if (sqlite != null)
+            RuntimeInfo("SQL / SQLite", RuntimeStatus.VERIFIED, sqlite, true, "0 MB (part of Android)", "Test passed: ran a query on this device. Databases are in-memory per run.")
+        else RuntimeInfo("SQL / SQLite", RuntimeStatus.UNSUPPORTED, "-", false, "-", "The SQLite self-test failed on this device.")
+
+        val shell = withContext(Dispatchers.IO) {
+            runCatching {
+                val p = ProcessBuilder("/system/bin/sh", "-c", "echo xc-ok").redirectErrorStream(true).start()
+                p.outputStream.close()
+                val text = p.inputStream.bufferedReader().readText().trim()
+                p.waitFor()
+                text == "xc-ok"
+            }.getOrDefault(false)
+        }
+        out += if (shell)
+            RuntimeInfo("Android shell", RuntimeStatus.LIMITED, "Android ${Build.VERSION.RELEASE}", true, "0 MB (part of Android)", "Test passed. Limited: not a full Linux, runs as this app's user, no interactive input.")
+        else RuntimeInfo("Android shell", RuntimeStatus.UNSUPPORTED, "-", false, "-", "The shell self-test failed.")
+
+        val webVersion = runCatching { WebView.getCurrentWebViewPackage()?.versionName }.getOrNull()
+        val js = withContext(Dispatchers.Main) { jsSelfTest(ctx) }
+        out += if (js)
+            RuntimeInfo("HTML / CSS / JavaScript", RuntimeStatus.LIMITED, "System WebView ${webVersion ?: "?"}", true, "0 MB (system WebView)", "Test passed: ran JavaScript here. Limited: browser JS, not Node.js; network blocked in Play.")
+        else RuntimeInfo("HTML / CSS / JavaScript", RuntimeStatus.UNSUPPORTED, webVersion ?: "-", false, "-", "The WebView JavaScript self-test failed or timed out.")
+
+        val md = Markdown.toHtml("# a").contains("<h1>a</h1>")
+        out += RuntimeInfo("Markdown", if (md) RuntimeStatus.VERIFIED else RuntimeStatus.UNSUPPORTED, "built-in", true, "0 MB", "Test passed: converted a sample heading.")
+
+        out += RuntimeCatalog.notInstalled()
+        return out
+    }
+
+    private suspend fun jsSelfTest(ctx: Context): Boolean = withTimeoutOrNull(6000L) {
+        suspendCancellableCoroutine<Boolean> { cont ->
+            val wv = WebView(ctx.applicationContext)
+            var destroyed = false
+            fun done(r: Boolean) {
+                if (cont.isActive) cont.resume(r)
+                if (!destroyed) { destroyed = true; wv.destroy() }
+            }
+            wv.settings.javaScriptEnabled = true
+            wv.settings.blockNetworkLoads = true
+            wv.webViewClient = object : WebViewClient() {
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    view?.evaluateJavascript("String(6*7)") { r -> done(r == "\"42\"") } ?: done(false)
+                }
+            }
+            cont.invokeOnCancellation { if (!destroyed) { destroyed = true; wv.destroy() } }
+            wv.loadDataWithBaseURL(null, "<html><body>t</body></html>", "text/html", "utf-8", null)
+        }
+    } ?: false
+}

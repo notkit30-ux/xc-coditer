@@ -12,6 +12,9 @@ data class Suggestion(val label: String, val insert: String, val kind: Suggestio
 object Suggestions {
     const val MARKER = '§'
     private const val MAX_SCAN = 200_000
+
+    /** Snippets contributed by enabled extensions. Set by the app when extensions change. */
+    @Volatile var extras: Map<Lang, List<Suggestion>> = emptyMap()
     private val wordRe = Regex("[A-Za-z_][A-Za-z0-9_]{2,}")
 
     private fun isIdent(c: Char) = c.isLetterOrDigit() || c == '_'
@@ -30,7 +33,7 @@ object Suggestions {
         val out = ArrayList<Suggestion>()
         fun ok(label: String) = label.startsWith(prefix, ignoreCase = true)
 
-        snippetsFor(lang).filter { ok(it.label) }.sortedBy { it.label }.forEach { if (seen.add(it.label)) out += it }
+        (snippetsFor(lang) + (extras[lang] ?: emptyList())).filter { ok(it.label) }.sortedBy { it.label }.forEach { if (seen.add(it.label)) out += it }
 
         val upperSql = lang == Lang.SQL && prefix.length > 1 && prefix.all { !it.isLowerCase() }
         lang.keywords.filter { ok(it) && it != prefix }

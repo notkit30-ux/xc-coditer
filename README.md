@@ -21,6 +21,11 @@ Honest feature status. "Implemented" means the code exists; only items marked *u
 | **Settings**: light/dark theme, font size, tab size, auto-save, reset (stored privately on device) | Implemented (UI not yet run on a device). Import/export of settings not yet built |
 | **Search and replace across files**, quick open by file name, jump to match line | Search/replace logic unit-tested; UI not yet run on a device |
 | **Project templates** (website, JS, TypeScript, Python, Java, Kotlin, C, C++, PHP, SQL, Markdown) | Unit-tested; each says honestly whether it can run in-app |
+| **Markdown preview** (▶ on a `.md` file; raw HTML is escaped) | Unit-tested; WebView not yet run on a device |
+| **Terminal** (tabs, history, stop, copy). Runs in Android's own shell as the app's user. Not full Linux; no keyboard input to programs | Not yet run on a device |
+| **Runtime Manager**: each runtime shows verified only after a live self-test on your device | Not yet run on a device |
+| **Extensions**: data-only (snippets), manifest + lifecycle in `docs/EXTENSIONS.md`, bundled examples. No online registry. VS Code extensions are not supported | Manifest/lifecycle unit-tested; UI not yet run on a device |
+| **Settings import/export** via clipboard | Codec unit-tested |
 | **Running / compiling other languages** (Python, Java, C, ...) | **Not implemented yet** (Phase 3) |
 | Terminal, extensions, Git, LSP, debugging, SQLite, web preview | Not implemented yet |
 

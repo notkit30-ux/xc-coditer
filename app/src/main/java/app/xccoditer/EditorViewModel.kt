@@ -53,10 +53,110 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     fun updateAutoSave(v: Boolean) { autoSave = v; prefs.edit().putBoolean("autosave", v).apply() }
     fun resetSettings() { updateLight(false); updateFontSize(14); updateTabSize(4); updateAutoSave(true) }
 
+    fun exportSettings(): String = SettingsCodec.encode(SettingsData(lightTheme, fontSize, tabSize, autoSave))
+
+    fun importSettings(text: String) {
+        runCatching { SettingsCodec.decode(text.trim()) }
+            .onSuccess { updateLight(it.light); updateFontSize(it.fontSize); updateTabSize(it.tabSize); updateAutoSave(it.autoSave); message = "Settings imported" }
+            .onFailure { message = "Import failed: ${it.message}" }
+    }
+
+    // ---- extensions (data-only; see docs/EXTENSIONS.md) ----
+    private val extensionStore = ExtensionStore(File(app.filesDir, "extensions"))
+    private var extVersion by mutableStateOf(0)
+
+    fun installedExtensions(): List<InstalledExtension> {
+        @Suppress("UNUSED_VARIABLE") val v = extVersion
+        return extensionStore.list()
+    }
+
+    private fun reloadExtensions() {
+        Suggestions.extras = extensionStore.enabledSnippets()
+        extVersion++
+    }
+
+    fun installExtension(json: String) {
+        runCatching { extensionStore.install(json) }
+            .onSuccess { reloadExtensions(); message = "Installed ${it.name} ${it.version}" }
+            .onFailure { message = "Install failed: ${it.message}" }
+    }
+
+    fun setExtensionEnabled(id: String, enabled: Boolean) { extensionStore.setEnabled(id, enabled); reloadExtensions() }
+    fun uninstallExtension(id: String) { extensionStore.uninstall(id); reloadExtensions() }
+
+    // ---- terminal ----
+    val terminals = mutableStateListOf<TerminalTab>()
+    var activeTerminal by mutableStateOf(0)
+
+    fun newTerminal() {
+        terminals.add(TerminalTab("sh ${terminals.size + 1}", workspace.root))
+        activeTerminal = terminals.lastIndex
+    }
+
+    fun ensureTerminal() { if (terminals.isEmpty()) newTerminal() }
+
+    fun closeTerminal(i: Int) {
+        terminals.getOrNull(i)?.stop()
+        if (i in terminals.indices) terminals.removeAt(i)
+        activeTerminal = activeTerminal.coerceAtMost(terminals.lastIndex).coerceAtLeast(0)
+    }
+
+    fun runCommand(tab: TerminalTab, raw: String) {
+        val cmd = raw.trim()
+        if (cmd.isEmpty() || tab.running) return
+        tab.history.add(cmd)
+        tab.historyPos = -1
+        tab.lines.add("$ $cmd")
+        when {
+            cmd == "clear" -> tab.lines.clear()
+            cmd == "pwd" -> tab.lines.add(tab.cwd.path)
+            cmd == "help" -> TERMINAL_HELP.lines().forEach { tab.lines.add(it) }
+            cmd == "cd" || cmd.startsWith("cd ") -> {
+                val t = ShellUtil.resolveCd(tab.cwd, cmd.removePrefix("cd").trim(), workspace.root)
+                if (t == null) tab.lines.add("cd: no such directory") else tab.cwd = t
+            }
+            else -> exec(tab, cmd)
+        }
+    }
+
+    private fun exec(tab: TerminalTab, cmd: String) {
+        tab.running = true
+        tab.stopped = false
+        viewModelScope.launch {
+            val t0 = System.currentTimeMillis()
+            val exit = withContext(Dispatchers.IO) {
+                try {
+                    val pb = ProcessBuilder("/system/bin/sh", "-c", cmd).directory(tab.cwd).redirectErrorStream(true)
+                    pb.environment()["HOME"] = workspace.root.path
+                    pb.environment()["TERM"] = "dumb"
+                    val p = pb.start()
+                    tab.process = p
+                    p.outputStream.close() // no stdin
+                    var count = 0
+                    val r = p.inputStream.bufferedReader()
+                    while (true) {
+                        val l = r.readLine() ?: break
+                        count++
+                        if (count <= 2000) withContext(Dispatchers.Main) { tab.lines.add(l.take(2000)) }
+                        else if (count == 2001) withContext(Dispatchers.Main) { tab.lines.add("[output truncated at 2000 lines]") }
+                    }
+                    p.waitFor()
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) { tab.lines.add("error: ${e.message}") }
+                    -1
+                }
+            }
+            tab.process = null
+            tab.lines.add((if (tab.stopped) "[stopped] " else "") + "[exit $exit, ${System.currentTimeMillis() - t0} ms]")
+            tab.running = false
+        }
+    }
+
     val active: EditorTab? get() = tabs.getOrNull(activeIndex)
 
     init {
         Pal.light = lightTheme
+        reloadExtensions()
         seedIfEmpty()
     }
 
