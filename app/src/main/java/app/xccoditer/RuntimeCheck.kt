@@ -56,6 +56,18 @@ object RuntimeCheck {
                 "Test passed: ran code on this device. Limited: standard library only, no pip or native packages (numpy etc.), no keyboard input, Stop acts at the next instruction.")
         else RuntimeInfo("Python", RuntimeStatus.UNSUPPORTED, "-", false, "-", "The Python self-test failed. This build may not include your device's CPU type.")
 
+        val termux = TermuxBridge.selfTest(ctx)
+        out += when {
+            !TermuxBridge.isInstalled(ctx) -> RuntimeInfo("Termux (Java, Kotlin, C, C++, Go, Rust, PHP, Ruby)", RuntimeStatus.NEEDS_CONFIG, "-", true, "Termux is a separate app",
+                "Termux is not installed. Get it from F-Droid. Compilers are installed inside Termux with pkg.")
+            !TermuxBridge.hasPermission(ctx) -> RuntimeInfo("Termux (Java, Kotlin, C, C++, Go, Rust, PHP, Ruby)", RuntimeStatus.NEEDS_CONFIG, "-", true, "Termux is a separate app",
+                "Termux is installed. Run a .c/.java/.go/... file once and allow the permission, after enabling allow-external-apps in Termux.")
+            termux == true -> RuntimeInfo("Termux (Java, Kotlin, C, C++, Go, Rust, PHP, Ruby)", RuntimeStatus.VERIFIED, "bridge works", true, "Termux is a separate app",
+                "Test passed: a command ran in Termux and returned. Each language still needs its package installed in Termux (pkg install ...).")
+            else -> RuntimeInfo("Termux (Java, Kotlin, C, C++, Go, Rust, PHP, Ruby)", RuntimeStatus.NEEDS_CONFIG, "-", true, "Termux is a separate app",
+                "Termux did not answer. Enable allow-external-apps=true in ~/.termux/termux.properties and restart Termux.")
+        }
+
         val md = Markdown.toHtml("# a").contains("<h1>a</h1>")
         out += RuntimeInfo("Markdown", if (md) RuntimeStatus.VERIFIED else RuntimeStatus.UNSUPPORTED, "built-in", true, "0 MB", "Test passed: converted a sample heading.")
 

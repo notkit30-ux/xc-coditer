@@ -530,6 +530,72 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         tabs.firstOrNull { it.file.canonicalFile == f }?.value?.text ?: f.readText()
     }.getOrNull()
 
+    // ---- Termux (Java, Kotlin, C, C++, Go, Rust, PHP, Ruby, shell) ----
+    var pendingTermux by mutableStateOf<EditorTab?>(null)
+    private val termuxJobs = HashMap<Int, TerminalTab>()
+    var termuxSummary by mutableStateOf("")
+        private set
+
+    private fun termuxPayload(tab: EditorTab): Triple<String, List<Pair<String, ByteArray>>, String>? {
+        val folder = tab.file.parentFile ?: return null
+        val all = TermuxScript.collect(folder)
+        val rel = tab.file.relativeTo(folder).invariantSeparatorsPath
+        val files = (all ?: listOf(rel to tab.value.text.toByteArray())).toMutableList()
+        // use the editor's current text for the file being run
+        val idx = files.indexOfFirst { it.first == rel }
+        if (idx >= 0) files[idx] = rel to tab.value.text.toByteArray() else files += rel to tab.value.text.toByteArray()
+        val cmd = TermuxScript.commandFor(rel) ?: return null
+        val note = if (all == null) "folder too large, sending only this file" else "${files.size} file(s) from ${folder.name}"
+        return Triple(cmd, files, note)
+    }
+
+    fun requestTermux(tab: EditorTab) {
+        if (TermuxScript.commandFor(tab.file.name) == null) { message = "No Termux command for this file type"; return }
+        val ctx = getApplication<Application>()
+        if (!TermuxBridge.isInstalled(ctx)) { message = "Termux is not installed. " + TermuxScript.SETUP; return }
+        termuxSummary = termuxPayload(tab)?.let { "Send ${it.third} to Termux and run: ${it.first.take(120)}" } ?: ""
+        pendingTermux = tab
+    }
+
+    fun confirmTermux(tab: EditorTab) {
+        pendingTermux = null
+        val payload = termuxPayload(tab) ?: return
+        val ctx = getApplication<Application>()
+        val term = terminals.firstOrNull { it.title == "Termux" } ?: TerminalTab("Termux", workspace.root).also { terminals.add(it) }
+        if (term.running) { message = "A Termux job is already running"; return }
+        activeTerminal = terminals.indexOf(term)
+        terminalRequested = true
+        term.lines.add("$ [Termux] " + payload.first)
+        term.lines.add("[sent ${payload.third}; waiting for Termux…]")
+        term.running = true
+        term.stopped = false
+        try {
+            TermuxBridge.listener = { id, res -> viewModelScope.launch(Dispatchers.Main) { onTermuxResult(id, res) } }
+            val script = TermuxScript.build(tab.file.parentFile!!.name, payload.second, payload.first)
+            val id = TermuxBridge.run(ctx, script)
+            termuxJobs[id] = term
+            term.stopHook = { termuxJobs.remove(id); term.lines.add("[stopped waiting; the job may still be running in Termux]"); term.running = false }
+        } catch (e: SecurityException) {
+            term.running = false
+            term.lines.add("Termux refused the request: ${e.message}")
+            TermuxScript.SETUP.lines().forEach { term.lines.add(it) }
+        } catch (e: Exception) {
+            term.running = false
+            term.lines.add("Could not reach Termux: ${e.message}")
+        }
+    }
+
+    private fun onTermuxResult(id: Int, r: TermuxResult) {
+        val term = termuxJobs.remove(id) ?: return
+        term.stopHook = null
+        if (r.error != null) term.lines.add("Termux error: ${r.error}")
+        r.stdout.lines().dropLastWhile { it.isEmpty() }.take(2000).forEach { term.lines.add(it) }
+        r.stderr.lines().dropLastWhile { it.isEmpty() }.take(2000).forEach { term.lines.add(it) }
+        TermuxScript.hint(r.stderr + "\n" + (r.error ?: ""))?.let { term.lines.add(it) }
+        term.lines.add("[exit ${r.exitCode}]")
+        term.running = false
+    }
+
     // ---- Python ----
     var terminalRequested by mutableStateOf(false)
     var pendingPython by mutableStateOf<EditorTab?>(null)
@@ -573,6 +639,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
     fun play() {
         val tab = active ?: return
+        if (TermuxScript.commandFor(tab.file.name) != null) { requestTermux(tab); return }
         if (tab.file.extension.equals("py", ignoreCase = true)) {
             if (tab.file in trustedPython) runPython(tab) else pendingPython = tab
             return

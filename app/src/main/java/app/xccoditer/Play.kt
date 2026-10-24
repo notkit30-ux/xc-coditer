@@ -30,7 +30,7 @@ object Play {
             "ts", "tsx" -> PlayResult.Unsupported("TypeScript needs a transpiler, which isn't built yet. Write plain JavaScript (.js) to play it now.")
             "css" -> PlayResult.Unsupported("CSS plays inside an HTML file that links it. Open your .html file and press Play.")
             else -> PlayResult.Unsupported(
-                "${lang.label} can't run yet: no runtime for it is built in. HTML, JavaScript, Markdown, SQL and Python run in the app.",
+                "${lang.label} can't run yet: no runtime for it is built in. HTML, JavaScript, Markdown, SQL and Python run in the app; Java, Kotlin, C, C++, Go, Rust, PHP and Ruby run through Termux.",
             )
         }
     }

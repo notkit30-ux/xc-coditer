@@ -105,6 +105,15 @@ fun XcApp(vm: EditorViewModel) {
     var showRuntimes by remember { mutableStateOf(false) }
     var showExt by remember { mutableStateOf(false) }
     var showGit by remember { mutableStateOf(false) }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    var termuxTab by remember { mutableStateOf<EditorTab?>(null) }
+    val termuxPerm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val t = termuxTab
+        termuxTab = null
+        if (t != null) {
+            if (granted) vm.confirmTermux(t) else vm.message = "Permission denied. Without it Termux cannot be used.\n" + TermuxScript.SETUP
+        }
+    }
     var exportSrc by remember { mutableStateOf<java.io.File?>(null) }
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri -> if (uri != null) vm.importFolder(uri) }
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
@@ -234,6 +243,19 @@ fun XcApp(vm: EditorViewModel) {
     if (showGit) GitDialog(vm) { showGit = false }
     LaunchedEffect(vm.terminalRequested) {
         if (vm.terminalRequested) { showTerminal = true; vm.terminalRequested = false }
+    }
+    vm.pendingTermux?.let { t ->
+        AlertDialog(
+            onDismissRequest = { vm.pendingTermux = null },
+            title = { Text("Run ${t.file.name} in Termux?") },
+            text = { Text(vm.termuxSummary + "\n\nThe code runs inside Termux with Termux's own permissions (its files, its network). Only run code you trust.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (TermuxBridge.hasPermission(ctx)) vm.confirmTermux(t) else { termuxTab = t; vm.pendingTermux = null; termuxPerm.launch(TermuxBridge.PERMISSION) }
+                }) { Text("Run") }
+            },
+            dismissButton = { TextButton(onClick = { vm.pendingTermux = null }) { Text("Cancel") } },
+        )
     }
     vm.pendingPython?.let { t ->
         AlertDialog(

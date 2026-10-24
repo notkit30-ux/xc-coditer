@@ -2,12 +2,18 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Network is used only by Git clone/push/pull when you start them. The Play preview blocks network loads. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Lets this app ask Termux (if installed and configured by you) to build and run code. -->
+    <uses-permission android:name="com.termux.permission.RUN_COMMAND" />
+    <queries>
+        <package android:name="com.termux" />
+    </queries>
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="XC CODITER"
         android:supportsRtl="true"
         android:theme="@style/Theme.XcCoditer">
+        <receiver android:name=".TermuxResultReceiver" android:exported="false" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

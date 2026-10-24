@@ -18,10 +18,7 @@ object RuntimeCatalog {
     /** Entries that need no live check. None may claim VERIFIED: only a passed execution test can. */
     fun notInstalled(): List<RuntimeInfo> = listOf(
         RuntimeInfo("TypeScript", RuntimeStatus.NOT_BUILT, "-", false, "-", "Needs a bundled transpiler. Editing and highlighting work."),
-        RuntimeInfo("PHP / Lua / Ruby", RuntimeStatus.NOT_BUILT, "-", false, "-", "No Android-ready interpreter is bundled yet."),
-        RuntimeInfo("Java / Kotlin", RuntimeStatus.NEEDS_CONFIG, "-", false, "-", "No on-device JDK or Kotlin compiler. Use a computer, or Termux with its own packages."),
-        RuntimeInfo("C / C++", RuntimeStatus.NEEDS_CONFIG, "-", false, "-", "No on-device compiler bundled. Termux provides clang if you install it."),
-        RuntimeInfo("Go / Rust", RuntimeStatus.NEEDS_CONFIG, "-", false, "-", "No on-device toolchain. Use Termux or a computer. Remote build would need your explicit consent per upload."),
+        RuntimeInfo("Compilers inside this app", RuntimeStatus.UNSUPPORTED, "-", false, "-", "Android ships no JDK, clang, Go or Rust and none are bundled. Java, Kotlin, C, C++, Go, Rust, PHP and Ruby run through Termux instead (see the Termux entry)."),
     )
 
 }
