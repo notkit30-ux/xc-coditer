@@ -29,10 +29,13 @@ Honest feature status. "Implemented" means the code exists; only items marked *u
 | **Git** (clone over https, init + set remote, status, diff, history, branches, commit all, pull, push) using JGit; token stored encrypted (Android Keystore); network used only when you press clone/pull/push | Wrapper tested against real local repos in CI; not yet run against GitHub or on a device |
 | **Phone folders**: import a folder into the app, export a folder back (copy-based, no storage permission; limits: 3000 files, 5 MB per file, 100 MB total) | Not yet run on a device. Not live editing |
 | **Python** (embedded CPython 3.12 via Chaquopy, MIT): output streams into a terminal tab, Stop, confirmation before first run of a file | Builds in CI; not yet run on a device |
-| **Running / compiling other languages** (Java, C, ...) | **Not implemented yet** (Phase 3) |
-| Terminal, extensions, Git, LSP, debugging, SQLite, web preview | Not implemented yet |
-
-Language support today: syntax highlighting only. Autocomplete, diagnostics, formatting, navigation, execution, compilation, debugging: none yet.
+| **Lua** (LuaJ, Lua 5.2): sandboxed (no io/os/require), Stop works | Tests pass in CI (incl. stopping an infinite loop); not yet run on a device |
+| **TypeScript** (▶ on `.ts`): the real TypeScript 6.0.3 compiler runs in a hidden, network-blocked WebView, then the JavaScript runs as a module. **Syntax errors are shown; types are NOT checked.** The compiler file is downloaded by the CI build, not stored in git | Result parsing tested; compiler tested in headless Chromium; WebView path not yet run on a device |
+| **Python debugger** (Command palette → "Debug (Python)"): breakpoints by line number, run to breakpoint or stop on first line, step over/into/out, call stack, variables, evaluate expression, stop; stops on an uncaught error with its variables visible. Python only | Debugger engine has 8 tests run in CI; UI not yet run on a device |
+| **Python code intelligence** (jedi + pyflakes, offline): completions while typing, Problems, go to definition, docs at cursor, find references, rename (single file) | Real jedi/pyflakes tests run in CI; UI not yet run on a device |
+| **Language servers** (C, C++, Go, Rust, TypeScript/JavaScript, Java, Kotlin, PHP, Ruby, Lua): a built-in LSP client connects over localhost to a server you run (e.g. in Termux) and gives completions, Problems, definition, docs, references, rename | Client tested against a mock server over a real socket. **Never tried against clangd, gopls, rust-analyzer or others**; the Termux commands shown in the app are suggestions |
+| **Termux bridge**: Java, Kotlin, C, C++, Go, Rust, PHP, Ruby and shell run inside Termux (a separate app you install; you must enable `allow-external-apps`), with confirmation before each run | Command building tested; not yet run against a real Termux |
+| **Online extension registry** (https index + SHA-256-checked data-only extensions) and **release signing** from GitHub secrets (`docs/RELEASE.md`) | See `docs/`; registry/signing checks run in CI; install flow not yet run on a device |
 
 ## Get the APK (from a phone)
 
@@ -45,18 +48,19 @@ If the run is red, open it, tap the failing step, and send the log; the first bu
 
 ## Releases
 
-Never commit a keystore (`.gitignore` blocks `*.jks`/`*.keystore`). For a signed release, store the keystore and passwords as GitHub Actions secrets and add a signing config reading them from environment variables.
+See `docs/RELEASE.md`. Never commit a keystore (`.gitignore` blocks `*.jks`/`*.keystore`). For a signed release, store the keystore and passwords as GitHub Actions secrets and add a signing config reading them from environment variables.
 
 ## Not built (and why)
 
-- **Debugging, language servers (real code intelligence):** each needs a per-language backend that is not available on Android as a ready component. Suggestions today are rule-based (snippets, keywords, words in your file).
-- **Compiling Java, Kotlin, C, C++, Go, Rust on the phone:** Android ships no such toolchains and bundling them is impractical. Use a computer, or Termux (its packages are separate from this app). A remote-build option would need your explicit consent for every upload; it is not built.
-- **PHP, Lua, Ruby, TypeScript, C#, Dart execution:** no embedded runtime yet.
-- **Python limits:** 64-bit phones only; standard library only (no pip at runtime, no numpy/native packages); no keyboard input to programs; Stop acts at the next Python instruction.
-- **Extension marketplace online / VS Code compatibility:** no hosted registry; extensions are data-only snippets. VS Code extensions are not supported.
-- **Live editing of phone folders:** folders are copied in and out. Opening them in place needs a different storage layer.
-- **Release signing:** see "Releases". Debug APKs only today.
+- **Compiling Java, Kotlin, C, C++, Go, Rust inside this app:** Android ships no such toolchains and bundling them is impractical. They run through **Termux** (separate app) or on a computer.
+- **Ruby in-app:** no embedded Ruby; it runs through Termux only. PHP, C#, Dart: Termux only (C#, Dart: not at all yet).
+- **Debugging languages other than Python:** none. A debugger needs a per-language adapter (DAP); not built.
+- **Type checking for TypeScript, and deep project-wide intelligence:** TypeScript is transpiled only. Language servers see the text of the file you have open, not your whole project on disk.
+- **Python limits:** 64-bit phones only; bundled standard library plus jedi/pyflakes (no pip at runtime, no numpy/native packages); no keyboard input to programs; Stop acts at the next Python instruction.
+- **VS Code extension compatibility:** extensions are data-only snippets; VS Code extensions are not supported.
+- **Live editing of phone folders:** folders are copied in and out.
+- **Everything marked "not yet run on a device":** the UI has only been compiled and unit-tested in CI. Please install the APK and report what breaks.
 
 ## Privacy
 
-No ads, no analytics. The only permission is INTERNET, used when you start Git clone/pull/push. The HTML/JS preview blocks all network loads. Your Git token is stored encrypted with the Android Keystore and is only sent to the Git server you choose.
+No ads, no analytics. Permissions: INTERNET (Git clone/pull/push, the extension registry when you open it, and localhost connections to language servers you configure) and Termux RUN_COMMAND (only to run a file in Termux after you confirm). The HTML/JS preview blocks all network loads. Your Git token is stored encrypted with the Android Keystore and is only sent to the Git server you choose.
