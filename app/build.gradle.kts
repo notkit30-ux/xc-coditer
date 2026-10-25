@@ -55,7 +55,15 @@ android {
 }
 
 chaquopy {
-    defaultConfig { version = "3.12" }
+    defaultConfig {
+        version = "3.12"
+        // Pure-Python code intelligence (MIT/BSD). Fetched at build time; nothing is downloaded on the phone.
+        pip {
+            install("jedi==0.19.2")
+            install("parso==0.8.4")
+            install("pyflakes==3.2.0")
+        }
+    }
 }
 
 dependencies {

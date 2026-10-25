@@ -1,6 +1,6 @@
 package app.xccoditer
 
-enum class SuggestionKind { SNIPPET, KEYWORD, WORD }
+enum class SuggestionKind { SNIPPET, KEYWORD, WORD, SYMBOL }
 
 /** [insert] may contain one '§' marking where the cursor should land. */
 data class Suggestion(val label: String, val insert: String, val kind: SuggestionKind, val detail: String = "")

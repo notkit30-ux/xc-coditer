@@ -96,6 +96,7 @@ fun XcApp(vm: EditorViewModel) {
     var palette by remember { mutableStateOf(false) }
     var findOpen by remember { mutableStateOf(false) }
     var goTo by remember { mutableStateOf(false) }
+    var renameOpen by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
@@ -212,6 +213,11 @@ fun XcApp(vm: EditorViewModel) {
         val cmds = listOf<Pair<String, () -> Unit>>(
             "Play (run instantly)" to { vm.play() },
             "Debug (Python)" to { vm.openDebug() },
+            "Problems (check this file)" to { vm.showProblems() },
+            "Go to definition" to { vm.gotoDefinition() },
+            "Show docs at cursor" to { vm.showDocs() },
+            "Find references" to { vm.findReferences() },
+            "Rename symbol" to { renameOpen = true },
             "Save" to { vm.save() },
             "Save all" to { vm.saveAll() },
             "Undo" to { vm.undo() },
@@ -268,6 +274,8 @@ fun XcApp(vm: EditorViewModel) {
             dismissButton = { TextButton(onClick = { vm.pendingPython = null }) { Text("Cancel") } },
         )
     }
+    if (renameOpen) TextPrompt("Rename symbol at cursor", "", "New name", { renameOpen = false }) { n -> vm.renameSymbol(n.trim()); renameOpen = false }
+    vm.intelPanel?.let { p -> IntelDialog(p, { vm.goToLine(it) }) { vm.intelPanel = null } }
     if (goTo) {
         TextPrompt("Go to line", "", "Line number", { goTo = false }) { s ->
             s.trim().toIntOrNull()?.let { vm.goToLine(it) }
@@ -483,8 +491,13 @@ private fun Explorer(vm: EditorViewModel, onTemplates: () -> Unit, onExport: (Fi
 private fun SuggestionBar(vm: EditorViewModel) {
     val tab = vm.active ?: return
     val v = tab.value
-    val list = remember(v.text, v.selection, tab.lang) {
-        if (v.selection.collapsed) Suggestions.suggest(v.text, v.selection.start, tab.lang) else emptyList()
+    LaunchedEffect(v.text, v.selection, tab) { vm.requestCompletions(tab) }
+    val intel = if (vm.intelKey == vm.intelKeyFor(tab)) vm.intelCompletions else emptyList()
+    val list = remember(v.text, v.selection, tab.lang, intel) {
+        if (v.selection.collapsed) {
+            val local = Suggestions.suggest(v.text, v.selection.start, tab.lang)
+            (intel + local).distinctBy { it.label }.take(14)
+        } else emptyList()
     }
     if (list.isEmpty()) return
     Row(Modifier.fillMaxWidth().background(Bg).horizontalScroll(rememberScrollState())) {
@@ -493,6 +506,7 @@ private fun SuggestionBar(vm: EditorViewModel) {
                 SuggestionKind.SNIPPET -> Violet
                 SuggestionKind.KEYWORD -> Accent
                 SuggestionKind.WORD -> TextCol
+                SuggestionKind.SYMBOL -> Accent
             }
             Text(
                 s.label,

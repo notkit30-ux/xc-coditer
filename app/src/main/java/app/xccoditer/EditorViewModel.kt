@@ -647,6 +647,91 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // ---- code intelligence (Python: jedi + pyflakes, built in) ----
+    var intelPanel by mutableStateOf<IntelPanel?>(null)
+    var intelCompletions by mutableStateOf<List<Suggestion>>(emptyList())
+    var intelKey by mutableStateOf("")
+    private var intelJob: kotlinx.coroutines.Job? = null
+    private val identRe = Regex("[A-Za-z_][A-Za-z0-9_]*")
+
+    private fun intelReady(tab: EditorTab): Boolean {
+        if (tab.lang == Lang.PYTHON) return true
+        message = "Code intelligence is built in for Python only. Other languages are not wired to a language server yet."
+        return false
+    }
+
+    /** Debounced; results land in [intelCompletions] tagged with [intelKey] so stale ones are ignored. */
+    fun requestCompletions(tab: EditorTab) {
+        intelJob?.cancel()
+        val v = tab.value
+        if (tab.lang != Lang.PYTHON || !v.selection.collapsed) { intelCompletions = emptyList(); return }
+        val at = v.selection.start
+        val prefix = Suggestions.prefixAt(v.text, at)
+        val afterDot = at > prefix.length && v.text[at - prefix.length - 1] == '.'
+        if (prefix.isEmpty() && !afterDot) { intelCompletions = emptyList(); return }
+        val key = v.text.hashCode().toString() + ":" + at
+        val (line, col) = IntelParse.lineCol(v.text, at)
+        val ctx = getApplication<Application>()
+        intelJob = viewModelScope.launch {
+            kotlinx.coroutines.delay(250)
+            val r = withContext(Dispatchers.IO) { runCatching { PythonIntel.complete(ctx, v.text, line, col, tab.file, workspace.root) }.getOrDefault(emptyList()) }
+            intelCompletions = r.filter { it.label.startsWith(prefix, ignoreCase = true) }
+            intelKey = key
+        }
+    }
+
+    fun intelKeyFor(tab: EditorTab) = tab.value.text.hashCode().toString() + ":" + tab.value.selection.start
+
+    private fun intelRun(title: String, block: suspend (EditorTab, Int, Int, Application) -> Unit) {
+        val tab = active ?: return
+        if (!intelReady(tab)) return
+        val (line, col) = IntelParse.lineCol(tab.value.text, tab.value.selection.start)
+        val ctx = getApplication<Application>()
+        message = "$title…"
+        viewModelScope.launch {
+            try { block(tab, line, col, ctx) } catch (e: Throwable) { message = "$title failed: ${e.message ?: e.javaClass.simpleName}"; return@launch }
+            if (message == "$title…") message = null
+        }
+    }
+
+    fun showProblems() = intelRun("Checking") { tab, _, _, ctx ->
+        val d = withContext(Dispatchers.IO) { PythonIntel.diagnostics(ctx, tab.value.text, tab.file) }
+        intelPanel = IntelPanel("Problems in ${tab.file.name}: ${d.size}", if (d.isEmpty()) "No problems found by pyflakes (this is not a type checker)." else null, IntelParse.diagRows(d))
+    }
+
+    fun gotoDefinition() = intelRun("Finding definition") { tab, line, col, ctx ->
+        val r = withContext(Dispatchers.IO) { PythonIntel.goto(ctx, tab.value.text, line, col, tab.file, workspace.root) }
+        val g = r.firstOrNull()
+        when {
+            g == null -> message = "No definition found."
+            g.sameFile -> goToLine(g.line)
+            g.builtin || g.path.isBlank() -> message = "'${g.name}' is built into Python (no source to open)."
+            else -> {
+                val f = File(g.path)
+                if (workspace.contains(f)) open(f, g.line) else message = "'${g.name}' is defined outside your project: ${f.name}"
+            }
+        }
+    }
+
+    fun showDocs() = intelRun("Looking up docs") { tab, line, col, ctx ->
+        val t = withContext(Dispatchers.IO) { PythonIntel.hover(ctx, tab.value.text, line, col, tab.file, workspace.root) }
+        if (t.isBlank()) message = "No documentation here." else intelPanel = IntelPanel("Documentation", t)
+    }
+
+    fun findReferences() = intelRun("Finding references") { tab, line, col, ctx ->
+        val r = withContext(Dispatchers.IO) { PythonIntel.references(ctx, tab.value.text, line, col, tab.file, workspace.root) }
+        intelPanel = IntelPanel("References in ${tab.file.name}: ${r.size}", if (r.isEmpty()) "No references found at the cursor." else null, r)
+    }
+
+    fun renameSymbol(newName: String) {
+        if (!identRe.matches(newName)) { message = "Not a valid Python name."; return }
+        intelRun("Renaming") { tab, line, col, ctx ->
+            val code = withContext(Dispatchers.IO) { PythonIntel.rename(ctx, tab.value.text, line, col, newName, tab.file, workspace.root) }
+            onEdit(tab, TextFieldValue(code, TextRange(minOf(tab.value.selection.start, code.length))))
+            message = "Renamed in this file (undo with Undo)."
+        }
+    }
+
     // ---- Python debugger ----
     var debug by mutableStateOf<DebugUi?>(null)
     var debugHidden by mutableStateOf(false)

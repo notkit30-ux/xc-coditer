@@ -31,8 +31,12 @@ jobs:
           cp node_modules/typescript/lib/typescript.js "$GITHUB_WORKSPACE/app/src/main/assets/xc/typescript.js"
           cp node_modules/typescript/LICENSE.txt "$GITHUB_WORKSPACE/app/src/main/assets/xc/typescript.LICENSE.txt"
 
-      - name: Python debugger tests
-        run: python3 -I app/src/test/python/test_xcdebug.py
+      - name: Python debugger and intelligence tests
+        run: |
+          set -e
+          python3 -m pip install --break-system-packages jedi==0.19.2 parso==0.8.4 pyflakes==3.2.0
+          python3 -I app/src/test/python/test_xcdebug.py
+          python3 app/src/test/python/test_xcintel.py -v
 
       - name: Unit tests
         run: |
