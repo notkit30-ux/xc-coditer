@@ -72,6 +72,8 @@ dependencies {
     implementation("org.slf4j:slf4j-nop:1.7.36")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
     implementation("androidx.documentfile:documentfile:1.0.1")
+    // Lua 5.2 interpreter in pure Java (MIT)
+    implementation("org.luaj:luaj-jse:3.0.1")
 
     testImplementation("junit:junit:4.13.2")
 }

@@ -68,6 +68,14 @@ object RuntimeCheck {
                 "Termux did not answer. Enable allow-external-apps=true in ~/.termux/termux.properties and restart Termux.")
         }
 
+        val luaOut = ArrayList<String>()
+        val luaOk = withContext(Dispatchers.Default) {
+            runCatching { LuaRunner.run("print(6*7)", "@selftest", { luaOut += it }, { false }) == 0 && luaOut == listOf("42") }.getOrDefault(false)
+        }
+        out += if (luaOk)
+            RuntimeInfo("Lua", RuntimeStatus.LIMITED, "Lua 5.2 (LuaJ)", true, "~0.5 MB", "Test passed: ran code on this device. Limited: sandboxed with no io, os or require; no keyboard input.")
+        else RuntimeInfo("Lua", RuntimeStatus.UNSUPPORTED, "-", false, "-", "The Lua self-test failed.")
+
         val md = Markdown.toHtml("# a").contains("<h1>a</h1>")
         out += RuntimeInfo("Markdown", if (md) RuntimeStatus.VERIFIED else RuntimeStatus.UNSUPPORTED, "built-in", true, "0 MB", "Test passed: converted a sample heading.")
 

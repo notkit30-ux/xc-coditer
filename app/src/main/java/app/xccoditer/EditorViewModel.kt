@@ -637,8 +637,37 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // ---- Lua ----
+    private fun runLua(tab: EditorTab) {
+        val text = tab.value.text
+        val term = terminals.firstOrNull { it.title == "Lua" } ?: TerminalTab("Lua", workspace.root).also { terminals.add(it) }
+        if (term.running) { message = "Lua is already running. Stop it first."; return }
+        activeTerminal = terminals.indexOf(term)
+        terminalRequested = true
+        term.lines.add("$ lua ${tab.file.name}")
+        term.running = true
+        term.stopped = false
+        val stop = java.util.concurrent.atomic.AtomicBoolean(false)
+        term.stopHook = { stop.set(true) }
+        viewModelScope.launch {
+            val t0 = System.currentTimeMillis()
+            var n = 0
+            val code = withContext(Dispatchers.IO) {
+                LuaRunner.run(text, "@" + tab.file.name, { l ->
+                    n++
+                    if (n <= 5000) viewModelScope.launch(Dispatchers.Main) { term.lines.add(l.take(2000)) }
+                    else if (n == 5001) viewModelScope.launch(Dispatchers.Main) { term.lines.add("[output truncated at 5000 lines]") }
+                }, { stop.get() })
+            }
+            term.stopHook = null
+            term.lines.add("[exit $code, ${System.currentTimeMillis() - t0} ms]")
+            term.running = false
+        }
+    }
+
     fun play() {
         val tab = active ?: return
+        if (tab.file.extension.equals("lua", ignoreCase = true)) { runLua(tab); return }
         if (TermuxScript.commandFor(tab.file.name) != null) { requestTermux(tab); return }
         if (tab.file.extension.equals("py", ignoreCase = true)) {
             if (tab.file in trustedPython) runPython(tab) else pendingPython = tab
