@@ -27,6 +27,16 @@ class EditorTab(val file: File, initial: String) {
 
 data class PlayPage(val title: String, val html: String)
 
+class DebugUi(val tab: EditorTab) {
+    var breakpoints by mutableStateOf<Set<Int>>(emptySet())
+    var running by mutableStateOf(false)
+    var paused by mutableStateOf<DebugPause?>(null)
+    var frame by mutableStateOf(0)
+    var variables by mutableStateOf<List<DebugVar>>(emptyList())
+    var evalResult by mutableStateOf("")
+    val output = mutableStateListOf<String>()
+}
+
 class EditorViewModel(app: Application) : AndroidViewModel(app) {
     val workspace = Workspace(File(app.filesDir, "workspace"))
     val tabs = mutableStateListOf<EditorTab>()
@@ -635,6 +645,87 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             term.lines.add((if (term.stopped) "[stopped] " else "") + "[exit $code, ${System.currentTimeMillis() - t0} ms]")
             term.running = false
         }
+    }
+
+    // ---- Python debugger ----
+    var debug by mutableStateOf<DebugUi?>(null)
+    var debugHidden by mutableStateOf(false)
+
+    fun openDebug() {
+        debugHidden = false
+        if (debug?.running == true) return
+        val tab = active ?: return
+        if (!tab.file.extension.equals("py", ignoreCase = true)) { message = "The debugger works on Python (.py) files only."; return }
+        if (debug?.tab !== tab) debug = DebugUi(tab)
+    }
+
+    fun closeDebug() {
+        val d = debug ?: return
+        if (d.running) debugCommand("stop")
+        debug = null
+    }
+
+    fun debugSetBreakpoints(lines: Set<Int>) {
+        val d = debug ?: return
+        d.breakpoints = lines
+        if (d.running) { val ctx = getApplication<Application>(); viewModelScope.launch(Dispatchers.IO) { PythonDebugger.setBreakpoints(ctx, lines) } }
+    }
+
+    fun debugStart(stopOnEntry: Boolean) {
+        val d = debug ?: return
+        if (d.running) return
+        if (terminals.any { it.title == "Python" && it.running }) { message = "Python is running in the terminal. Stop it first."; return }
+        val ctx = getApplication<Application>()
+        val text = d.tab.value.text
+        trustedPython.add(d.tab.file)
+        d.output.clear(); d.paused = null; d.running = true; d.evalResult = ""
+        val bps = d.breakpoints
+        val sink = object : DebugSink {
+            override fun write(kind: String, text: String) {
+                viewModelScope.launch(Dispatchers.Main) { text.split("\n").filter { it.isNotEmpty() }.forEach { if (d.output.size < 3000) d.output.add(it.take(2000)) } }
+            }
+            override fun paused(json: String) {
+                val p = DebugParse.pause(json)
+                viewModelScope.launch(Dispatchers.Main) { d.paused = p; debugHidden = false; d.frame = 0; d.variables = p?.variables.orEmpty() }
+            }
+            override fun finished(code: Int) {}
+        }
+        viewModelScope.launch {
+            val code = withContext(Dispatchers.IO) {
+                try {
+                    workspace.write(d.tab.file, text)
+                    withContext(Dispatchers.Main) { d.tab.saved = text }
+                    PythonDebugger.run(ctx, d.tab.file, bps, stopOnEntry, sink)
+                } catch (e: Throwable) {
+                    withContext(Dispatchers.Main) { d.output.add("Debugger could not start: ${e.message ?: e.javaClass.simpleName}") }
+                    -1
+                }
+            }
+            d.paused = null
+            d.running = false
+            d.output.add("[exit $code]")
+        }
+    }
+
+    fun debugCommand(cmd: String) {
+        val d = debug ?: return
+        val ctx = getApplication<Application>()
+        d.paused = null
+        viewModelScope.launch(Dispatchers.IO) { PythonDebugger.command(ctx, cmd) }
+    }
+
+    fun debugSelectFrame(i: Int) {
+        val d = debug ?: return
+        val ctx = getApplication<Application>()
+        d.frame = i
+        viewModelScope.launch { d.variables = withContext(Dispatchers.IO) { PythonDebugger.variables(ctx, i) } }
+    }
+
+    fun debugEval(expr: String) {
+        val d = debug ?: return
+        if (expr.isBlank() || d.paused == null) return
+        val ctx = getApplication<Application>()
+        viewModelScope.launch { d.evalResult = withContext(Dispatchers.IO) { PythonDebugger.evaluate(ctx, expr, d.frame) } }
     }
 
     // ---- Lua ----

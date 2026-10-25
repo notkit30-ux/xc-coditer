@@ -211,6 +211,7 @@ fun XcApp(vm: EditorViewModel) {
     if (palette) {
         val cmds = listOf<Pair<String, () -> Unit>>(
             "Play (run instantly)" to { vm.play() },
+            "Debug (Python)" to { vm.openDebug() },
             "Save" to { vm.save() },
             "Save all" to { vm.saveAll() },
             "Undo" to { vm.undo() },
@@ -241,6 +242,7 @@ fun XcApp(vm: EditorViewModel) {
     if (showRuntimes) RuntimeManagerDialog { showRuntimes = false }
     if (showExt) ExtensionsDialog(vm) { showExt = false }
     if (showGit) GitDialog(vm) { showGit = false }
+    if (!vm.debugHidden) vm.debug?.let { d -> DebugDialog(vm, d) { if (d.running) vm.debugHidden = true else vm.closeDebug() } }
     LaunchedEffect(vm.terminalRequested) {
         if (vm.terminalRequested) { showTerminal = true; vm.terminalRequested = false }
     }

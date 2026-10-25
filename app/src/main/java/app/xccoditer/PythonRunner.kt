@@ -15,7 +15,7 @@ fun interface OutputSink {
  * no keyboard input, and Stop works at the next Python instruction.
  */
 object PythonRunner {
-    private fun py(ctx: Context): Python {
+    internal fun py(ctx: Context): Python {
         if (!Python.isStarted()) Python.start(AndroidPlatform(ctx.applicationContext))
         return Python.getInstance()
     }

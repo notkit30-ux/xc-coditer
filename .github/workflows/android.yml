@@ -31,6 +31,9 @@ jobs:
           cp node_modules/typescript/lib/typescript.js "$GITHUB_WORKSPACE/app/src/main/assets/xc/typescript.js"
           cp node_modules/typescript/LICENSE.txt "$GITHUB_WORKSPACE/app/src/main/assets/xc/typescript.LICENSE.txt"
 
+      - name: Python debugger tests
+        run: python3 -I app/src/test/python/test_xcdebug.py
+
       - name: Unit tests
         run: |
           set -o pipefail
