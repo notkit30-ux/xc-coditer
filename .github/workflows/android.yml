@@ -20,6 +20,17 @@ jobs:
         with:
           gradle-version: 8.10.2
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Fetch TypeScript compiler (Apache-2.0) into assets
+        run: |
+          set -e
+          mkdir -p /tmp/ts && cd /tmp/ts && npm init -y >/dev/null && npm install typescript@6.0.3 --no-audit --no-fund
+          cp node_modules/typescript/lib/typescript.js "$GITHUB_WORKSPACE/app/src/main/assets/xc/typescript.js"
+          cp node_modules/typescript/LICENSE.txt "$GITHUB_WORKSPACE/app/src/main/assets/xc/typescript.LICENSE.txt"
+
       - name: Unit tests
         run: |
           set -o pipefail

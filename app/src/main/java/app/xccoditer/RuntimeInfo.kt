@@ -17,7 +17,6 @@ data class RuntimeInfo(val name: String, val status: RuntimeStatus, val version:
 object RuntimeCatalog {
     /** Entries that need no live check. None may claim VERIFIED: only a passed execution test can. */
     fun notInstalled(): List<RuntimeInfo> = listOf(
-        RuntimeInfo("TypeScript", RuntimeStatus.NOT_BUILT, "-", false, "-", "Needs a bundled transpiler. Editing and highlighting work."),
         RuntimeInfo("Compilers inside this app", RuntimeStatus.UNSUPPORTED, "-", false, "-", "Android ships no JDK, clang, Go or Rust and none are bundled. Java, Kotlin, C, C++, Go, Rust, PHP and Ruby run through Termux instead (see the Termux entry)."),
     )
 

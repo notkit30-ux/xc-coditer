@@ -27,7 +27,7 @@ object Play {
             "html", "htm", "svg" -> PlayResult.Page(injectConsole(inlineAssets(text, readLocal), full = false))
             "js", "mjs" -> PlayResult.Page(injectConsole(jsPage(text), full = true))
             "md", "markdown" -> PlayResult.Page(Markdown.page(text))
-            "ts", "tsx" -> PlayResult.Unsupported("TypeScript needs a transpiler, which isn't built yet. Write plain JavaScript (.js) to play it now.")
+            "ts", "tsx" -> PlayResult.Unsupported("TypeScript is transpiled by the app first. Press Play on a .ts file in the editor.")
             "css" -> PlayResult.Unsupported("CSS plays inside an HTML file that links it. Open your .html file and press Play.")
             else -> PlayResult.Unsupported(
                 "${lang.label} can't run yet: no runtime for it is built in. HTML, JavaScript, Markdown, SQL and Python run in the app; Java, Kotlin, C, C++, Go, Rust, PHP and Ruby run through Termux.",
@@ -59,6 +59,15 @@ object Play {
         }
         return out
     }
+
+    /** Runs already-transpiled TypeScript output as an ES module with the console hook. */
+    fun moduleFromJs(js: String): String = injectConsole(
+        "<!DOCTYPE html><html><head><meta charset=\"utf-8\">" +
+            "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Play</title></head>" +
+            "<body style=\"margin:0;background:#0E1117\"><script type=\"module\">" +
+            js.replace("</script", "<\\/script") + "\n</script></body></html>",
+        full = true,
+    )
 
     private fun jsPage(js: String): String =
         "<!DOCTYPE html><html><head><meta charset=\"utf-8\">" +

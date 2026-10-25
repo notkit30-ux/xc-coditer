@@ -7,3 +7,5 @@ local.properties
 captures/
 *.jks
 *.keystore
+app/src/main/assets/xc/typescript.js
+app/src/main/assets/xc/typescript.LICENSE.txt

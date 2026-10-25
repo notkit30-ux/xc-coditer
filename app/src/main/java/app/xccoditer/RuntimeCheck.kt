@@ -76,6 +76,11 @@ object RuntimeCheck {
             RuntimeInfo("Lua", RuntimeStatus.LIMITED, "Lua 5.2 (LuaJ)", true, "~0.5 MB", "Test passed: ran code on this device. Limited: sandboxed with no io, os or require; no keyboard input.")
         else RuntimeInfo("Lua", RuntimeStatus.UNSUPPORTED, "-", false, "-", "The Lua self-test failed.")
 
+        val ts = runCatching { TsTranspiler.transpile(ctx, "const x: number = 6 * 7; console.log(x)", "selftest.ts") }.getOrNull()
+        out += if (ts is TsOutcome.Ok && ts.diagnostics.isEmpty() && ts.js.contains("const x = 6 * 7") && !ts.js.contains(": number"))
+            RuntimeInfo("TypeScript", RuntimeStatus.LIMITED, "TypeScript " + ts.version, true, "~9 MB", "Test passed: compiled a sample on this device. Limited: syntax only, no type-checking; runs as a browser module with no Node APIs.")
+        else RuntimeInfo("TypeScript", RuntimeStatus.UNSUPPORTED, "-", false, "-", (ts as? TsOutcome.Failed)?.reason ?: "The TypeScript self-test failed.")
+
         val md = Markdown.toHtml("# a").contains("<h1>a</h1>")
         out += RuntimeInfo("Markdown", if (md) RuntimeStatus.VERIFIED else RuntimeStatus.UNSUPPORTED, "built-in", true, "0 MB", "Test passed: converted a sample heading.")
 

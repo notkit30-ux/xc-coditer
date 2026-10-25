@@ -665,8 +665,24 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    private fun playTypeScript(tab: EditorTab) {
+        val text = tab.value.text
+        message = "Compiling TypeScript…"
+        viewModelScope.launch {
+            val r = TsTranspiler.transpile(getApplication(), text, tab.file.name)
+            message = null
+            when (r) {
+                is TsOutcome.Failed -> message = r.reason
+                is TsOutcome.Ok ->
+                    playPage = if (r.diagnostics.isNotEmpty()) PlayPage(tab.file.name, TsResult.diagnosticsPage(tab.file.name, r.diagnostics))
+                    else PlayPage(tab.file.name, Play.moduleFromJs(r.js))
+            }
+        }
+    }
+
     fun play() {
         val tab = active ?: return
+        if (tab.file.extension.lowercase() in setOf("ts", "tsx", "mts")) { playTypeScript(tab); return }
         if (tab.file.extension.equals("lua", ignoreCase = true)) { runLua(tab); return }
         if (TermuxScript.commandFor(tab.file.name) != null) { requestTermux(tab); return }
         if (tab.file.extension.equals("py", ignoreCase = true)) {

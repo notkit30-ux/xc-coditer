@@ -74,6 +74,7 @@ dependencies {
     implementation("androidx.documentfile:documentfile:1.0.1")
     // Lua 5.2 interpreter in pure Java (MIT)
     implementation("org.luaj:luaj-jse:3.0.1")
+    implementation("androidx.webkit:webkit:1.12.1")
 
     testImplementation("junit:junit:4.13.2")
 }
