@@ -97,6 +97,7 @@ fun XcApp(vm: EditorViewModel) {
     var findOpen by remember { mutableStateOf(false) }
     var goTo by remember { mutableStateOf(false) }
     var renameOpen by remember { mutableStateOf(false) }
+    var showLsp by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
@@ -218,6 +219,7 @@ fun XcApp(vm: EditorViewModel) {
             "Show docs at cursor" to { vm.showDocs() },
             "Find references" to { vm.findReferences() },
             "Rename symbol" to { renameOpen = true },
+            "Language servers" to { showLsp = true },
             "Save" to { vm.save() },
             "Save all" to { vm.saveAll() },
             "Undo" to { vm.undo() },
@@ -274,6 +276,7 @@ fun XcApp(vm: EditorViewModel) {
             dismissButton = { TextButton(onClick = { vm.pendingPython = null }) { Text("Cancel") } },
         )
     }
+    if (showLsp) LspDialog(vm) { showLsp = false }
     if (renameOpen) TextPrompt("Rename symbol at cursor", "", "New name", { renameOpen = false }) { n -> vm.renameSymbol(n.trim()); renameOpen = false }
     vm.intelPanel?.let { p -> IntelDialog(p, { vm.goToLine(it) }) { vm.intelPanel = null } }
     if (goTo) {

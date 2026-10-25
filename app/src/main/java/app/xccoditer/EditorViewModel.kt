@@ -647,24 +647,74 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    // ---- code intelligence (Python: jedi + pyflakes, built in) ----
+    // ---- code intelligence: Python built in (jedi + pyflakes); other languages via a language server over TCP ----
     var intelPanel by mutableStateOf<IntelPanel?>(null)
     var intelCompletions by mutableStateOf<List<Suggestion>>(emptyList())
     var intelKey by mutableStateOf("")
     private var intelJob: kotlinx.coroutines.Job? = null
     private val identRe = Regex("[A-Za-z_][A-Za-z0-9_]*")
+    private val lspEngines = java.util.concurrent.ConcurrentHashMap<Lang, LspEngine>()
+    var lspStatus by mutableStateOf<Map<Lang, String>>(emptyMap())
+
+    val lspLanguages = listOf(Lang.C, Lang.CPP, Lang.GO, Lang.RUST, Lang.TYPESCRIPT, Lang.JAVASCRIPT, Lang.JAVA, Lang.KOTLIN, Lang.PHP, Lang.RUBY, Lang.LUA)
+    fun lspSavedAddress(lang: Lang): String = prefs.getString("lsp_" + lang.name, "") ?: ""
+
+    private fun languageId(l: Lang) = when (l) { Lang.CPP -> "cpp"; Lang.SHELL -> "shellscript"; else -> l.name.lowercase() }
+
+    /** Blocking (call off the main thread). Returns a live engine, reconnecting to the saved address if needed. */
+    private fun lspGet(lang: Lang): LspEngine? {
+        lspEngines[lang]?.let { if (!it.client.closed) return it }
+        val addr = lspSavedAddress(lang)
+        val host = addr.substringBeforeLast(':', "")
+        val port = addr.substringAfterLast(':', "").toIntOrNull()
+        if (host.isEmpty() || port == null) return null
+        return runCatching { connectLsp(lang, host, port) }.getOrNull()
+    }
+
+    private fun connectLsp(lang: Lang, host: String, port: Int): LspEngine {
+        lspEngines.remove(lang)?.client?.close()
+        lateinit var engine: LspEngine
+        val client = LspClient.connect(host, port) { u, d -> engine.onDiagnostics(u, d) }
+        val name = try { client.initialize("file://" + workspace.root.path) } catch (e: Throwable) { client.close(); throw e }
+        engine = LspEngine(client, languageId(lang), name)
+        lspEngines[lang] = engine
+        return engine
+    }
+
+    fun lspConnect(lang: Lang, address: String) {
+        val host = address.substringBeforeLast(':', "").trim()
+        val port = address.substringAfterLast(':', "").trim().toIntOrNull()
+        if (host.isEmpty() || port == null || port !in 1..65535) { lspStatus = lspStatus + (lang to "Use host:port, for example 127.0.0.1:2087"); return }
+        prefs.edit().putString("lsp_" + lang.name, "$host:$port").apply()
+        lspStatus = lspStatus + (lang to "Connecting…")
+        viewModelScope.launch {
+            val r = withContext(Dispatchers.IO) { runCatching { connectLsp(lang, host, port) } }
+            lspStatus = lspStatus + (lang to (r.getOrNull()?.let { "Connected: ${it.serverName}" }
+                ?: "Could not connect: ${r.exceptionOrNull()?.message ?: "unknown error"}. Is the server running and listening on $host:$port?"))
+        }
+    }
+
+    fun lspDisconnect(lang: Lang) {
+        lspEngines.remove(lang)?.client?.close()
+        prefs.edit().remove("lsp_" + lang.name).apply()
+        lspStatus = lspStatus + (lang to "Disconnected")
+    }
+
+    private fun hasIntel(tab: EditorTab) = tab.lang == Lang.PYTHON || lspSavedAddress(tab.lang).isNotEmpty()
 
     private fun intelReady(tab: EditorTab): Boolean {
-        if (tab.lang == Lang.PYTHON) return true
-        message = "Code intelligence is built in for Python only. Other languages are not wired to a language server yet."
+        if (hasIntel(tab)) return true
+        message = "No code intelligence for ${tab.lang.label}. Python is built in; for other languages connect a language server (menu: Language servers)."
         return false
     }
+
+    private fun uri(tab: EditorTab) = "file://" + tab.file.path
 
     /** Debounced; results land in [intelCompletions] tagged with [intelKey] so stale ones are ignored. */
     fun requestCompletions(tab: EditorTab) {
         intelJob?.cancel()
         val v = tab.value
-        if (tab.lang != Lang.PYTHON || !v.selection.collapsed) { intelCompletions = emptyList(); return }
+        if (!hasIntel(tab) || !v.selection.collapsed) { intelCompletions = emptyList(); return }
         val at = v.selection.start
         val prefix = Suggestions.prefixAt(v.text, at)
         val afterDot = at > prefix.length && v.text[at - prefix.length - 1] == '.'
@@ -674,8 +724,13 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         val ctx = getApplication<Application>()
         intelJob = viewModelScope.launch {
             kotlinx.coroutines.delay(250)
-            val r = withContext(Dispatchers.IO) { runCatching { PythonIntel.complete(ctx, v.text, line, col, tab.file, workspace.root) }.getOrDefault(emptyList()) }
-            intelCompletions = r.filter { it.label.startsWith(prefix, ignoreCase = true) }
+            val r = withContext(Dispatchers.IO) {
+                runCatching {
+                    if (tab.lang == Lang.PYTHON) PythonIntel.complete(ctx, v.text, line, col, tab.file, workspace.root)
+                    else lspGet(tab.lang)?.complete(uri(tab), v.text, line, col).orEmpty()
+                }.getOrDefault(emptyList())
+            }
+            intelCompletions = r.filter { it.label.startsWith(prefix, ignoreCase = true) }.take(40)
             intelKey = key
         }
     }
@@ -694,39 +749,66 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    private fun lspOrFail(tab: EditorTab): LspEngine = lspGet(tab.lang) ?: error("the language server is not reachable (check Language servers)")
+
     fun showProblems() = intelRun("Checking") { tab, _, _, ctx ->
-        val d = withContext(Dispatchers.IO) { PythonIntel.diagnostics(ctx, tab.value.text, tab.file) }
-        intelPanel = IntelPanel("Problems in ${tab.file.name}: ${d.size}", if (d.isEmpty()) "No problems found by pyflakes (this is not a type checker)." else null, IntelParse.diagRows(d))
+        val d = withContext(Dispatchers.IO) {
+            if (tab.lang == Lang.PYTHON) PythonIntel.diagnostics(ctx, tab.value.text, tab.file)
+            else lspOrFail(tab).diagnostics(uri(tab), tab.value.text)
+        }
+        val src = if (tab.lang == Lang.PYTHON) "No problems found by pyflakes (this is not a type checker)." else "The language server reported no problems."
+        intelPanel = IntelPanel("Problems in ${tab.file.name}: ${d.size}", if (d.isEmpty()) src else null, IntelParse.diagRows(d))
     }
 
     fun gotoDefinition() = intelRun("Finding definition") { tab, line, col, ctx ->
-        val r = withContext(Dispatchers.IO) { PythonIntel.goto(ctx, tab.value.text, line, col, tab.file, workspace.root) }
-        val g = r.firstOrNull()
-        when {
-            g == null -> message = "No definition found."
-            g.sameFile -> goToLine(g.line)
-            g.builtin || g.path.isBlank() -> message = "'${g.name}' is built into Python (no source to open)."
-            else -> {
-                val f = File(g.path)
-                if (workspace.contains(f)) open(f, g.line) else message = "'${g.name}' is defined outside your project: ${f.name}"
+        if (tab.lang == Lang.PYTHON) {
+            val g = withContext(Dispatchers.IO) { PythonIntel.goto(ctx, tab.value.text, line, col, tab.file, workspace.root) }.firstOrNull()
+            when {
+                g == null -> message = "No definition found."
+                g.sameFile -> goToLine(g.line)
+                g.builtin || g.path.isBlank() -> message = "'${g.name}' is built into Python (no source to open)."
+                else -> {
+                    val f = File(g.path)
+                    if (workspace.contains(f)) open(f, g.line) else message = "'${g.name}' is defined outside your project: ${f.name}"
+                }
+            }
+        } else {
+            val g = withContext(Dispatchers.IO) { lspOrFail(tab).definition(uri(tab), tab.value.text, line, col) }.firstOrNull()
+            when {
+                g == null -> message = "No definition found."
+                g.first == uri(tab) -> goToLine(g.second)
+                else -> {
+                    val f = File(g.first.removePrefix("file://"))
+                    if (workspace.contains(f) && f.isFile) open(f, g.second) else message = "Defined outside your project: ${g.first}"
+                }
             }
         }
     }
 
     fun showDocs() = intelRun("Looking up docs") { tab, line, col, ctx ->
-        val t = withContext(Dispatchers.IO) { PythonIntel.hover(ctx, tab.value.text, line, col, tab.file, workspace.root) }
+        val t = withContext(Dispatchers.IO) {
+            if (tab.lang == Lang.PYTHON) PythonIntel.hover(ctx, tab.value.text, line, col, tab.file, workspace.root)
+            else lspOrFail(tab).hover(uri(tab), tab.value.text, line, col)
+        }
         if (t.isBlank()) message = "No documentation here." else intelPanel = IntelPanel("Documentation", t)
     }
 
     fun findReferences() = intelRun("Finding references") { tab, line, col, ctx ->
-        val r = withContext(Dispatchers.IO) { PythonIntel.references(ctx, tab.value.text, line, col, tab.file, workspace.root) }
+        val r = withContext(Dispatchers.IO) {
+            if (tab.lang == Lang.PYTHON) PythonIntel.references(ctx, tab.value.text, line, col, tab.file, workspace.root)
+            else lspOrFail(tab).references(uri(tab), tab.value.text, line, col).filter { it.first == uri(tab) }.map { IntelRow("line ${it.second}, col ${it.third}", it.second) }
+        }
         intelPanel = IntelPanel("References in ${tab.file.name}: ${r.size}", if (r.isEmpty()) "No references found at the cursor." else null, r)
     }
 
     fun renameSymbol(newName: String) {
-        if (!identRe.matches(newName)) { message = "Not a valid Python name."; return }
+        if (newName.isBlank() || newName.any { it.isWhitespace() }) { message = "Not a valid name."; return }
+        if (active?.lang == Lang.PYTHON && !identRe.matches(newName)) { message = "Not a valid Python name."; return }
         intelRun("Renaming") { tab, line, col, ctx ->
-            val code = withContext(Dispatchers.IO) { PythonIntel.rename(ctx, tab.value.text, line, col, newName, tab.file, workspace.root) }
+            val code = withContext(Dispatchers.IO) {
+                if (tab.lang == Lang.PYTHON) PythonIntel.rename(ctx, tab.value.text, line, col, newName, tab.file, workspace.root)
+                else lspOrFail(tab).rename(uri(tab), tab.value.text, line, col, newName)
+            }
             onEdit(tab, TextFieldValue(code, TextRange(minOf(tab.value.selection.start, code.length))))
             message = "Renamed in this file (undo with Undo)."
         }
