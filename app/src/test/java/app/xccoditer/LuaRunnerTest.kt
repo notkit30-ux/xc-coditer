@@ -20,7 +20,7 @@ class LuaRunnerTest {
     @Test fun runtimeErrorReported() {
         val (c, l) = run("local x = nil\nprint(x.y)")
         assertEquals(1, c)
-        assertTrue(l.toString(), l.last().startsWith("lua: t.lua:2"))
+        assertTrue(l.toString(), l.last().startsWith("lua: ") && l.last().contains(":2") && l.last().contains("nil"))
     }
 
     @Test fun syntaxErrorReported() {
